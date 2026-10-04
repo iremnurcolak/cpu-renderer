@@ -8,4 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(cpu_renderer
     src/main.cpp
+    third_party/tinyrenderer/tgaimage.cpp
 )
+
+target_include_directories(cpu_renderer PRIVATE third_party/tinyrenderer)

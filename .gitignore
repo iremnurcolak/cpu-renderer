@@ -5,3 +5,6 @@ build/
 *.vcxproj
 *.vcxproj.filters
 *.sln
+
+# Generated renderer output (keep model textures trackable).
+/framebuffer.tga

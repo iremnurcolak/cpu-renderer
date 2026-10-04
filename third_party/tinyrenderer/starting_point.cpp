@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     int bx = 12, by = 37;
     int cx = 62, cy = 53;
 
-    framebuffer.set(ax, ay, red);
+    framebuffer.set(ax, ay, white);
     framebuffer.set(bx, by, white);
     framebuffer.set(cx, cy, white);
 
