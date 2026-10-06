@@ -39,10 +39,12 @@ image and the `build/` directory are not tracked by Git.
 `main` currently uses `drawLineInterpolated`. The function supports horizontal,
 vertical, and steep lines. Coincident endpoints produce a single pixel.
 
-`obj_renderer` is a separate entry point for OBJ experiments. Its parser is
-intentionally left unimplemented; add vertex and face loading in
-`src/obj_renderer.cpp`, then use the line functions through
-`#include "line_renderer.h"`.
+`obj_renderer` is a separate entry point for OBJ experiments. It opens the
+provided model, reads it line by line, and stores position records in a vertex
+vector. Each polygon face is parsed into temporary resolved vertex indices so it
+can be rendered immediately without storing all faces. Rendering those parsed
+indices is intentionally left as a TODO in `src/obj_renderer.cpp`. Line
+functions are available through `#include "line_renderer.h"`.
 
 OBJ input files are stored in `assets/models/`. After implementing the parser,
 run the OBJ renderer from the project root with a model path:
@@ -80,8 +82,8 @@ to render the example scene.
 - `src/main.cpp`: Example scene and line benchmark entry point.
 - `src/line_renderer.h`: Reusable line-drawing interface.
 - `src/line_renderer.cpp`: Line-drawing implementations.
-- `src/obj_renderer.cpp`: OBJ renderer entry point; vertex and face parsing is
-  intentionally left as a TODO.
+- `src/obj_renderer.cpp`: OBJ renderer entry point, line-by-line model input,
+  vertex parsing, and face index parsing.
 - `assets/models/`: OBJ model files used as renderer input.
 - `third_party/tinyrenderer/`: TGA image utilities.
 - `CMakeLists.txt`: Build configuration.
