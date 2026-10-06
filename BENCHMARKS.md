@@ -6,8 +6,8 @@ measured time; writing the TGA file to disk is excluded.
 
 | Date | Method | Runs (s) | Median (s) |
 |---|---|---:|---:|
-| Previous measurement | Per-pixel `t` calculation | Raw values were not recorded | 2.384 |
-| Previous measurement | Incrementing `float y` by the slope | Raw values were not recorded | 2.391 |
+| 2026-10-06 | Per-pixel `t` calculation | 2.76760 / 2.77883 / 2.77594 | 2.77594 |
+| 2026-10-06 | Incrementing `float y` by the slope | 2.05727 / 2.18249 / 2.01069 | 2.05727 |
 | 2026-10-06 | Integer `y` with accumulated `error` | 2.55459 / 2.51690 / 2.50517 | 2.51690 |
 | 2026-10-06 | Scaled integer `ierror` (final) | 2.42865 / 2.37075 / 2.38202 | 2.38202 |
 

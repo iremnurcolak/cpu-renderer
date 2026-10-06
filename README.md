@@ -80,10 +80,9 @@ to render the example scene.
 - Added support for coincident endpoints and a performance benchmark for 16
   million random lines.
 - Replaced per-pixel `t` calculations with incremental slope updates. In three
-  runs under the same Release settings, the old method had a median time of
-  2.384 seconds and the incremental method 2.391 seconds; no meaningful speed
-  difference was observed. These times include random number generation and
-  vary by system.
+  runs under the same Release settings on the same machine, the old method had
+  a median time of 2.77594 seconds and the incremental method 2.05727 seconds.
+  These times include random number generation and vary by system.
 - Changed line rasterization to use an integer coordinate and accumulated error;
   the final version also scales the error term to perform the inner-loop
   calculations entirely with integers. Detailed measurements are recorded in
