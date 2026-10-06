@@ -27,6 +27,8 @@ cmake --build build
 
 ## Rastgele çizgi performans denemesi
 
+Geçmiş ölçüm sonuçları [BENCHMARKS.md](BENCHMARKS.md) dosyasında tutulur.
+
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
