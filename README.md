@@ -1,12 +1,13 @@
 # CPU Renderer
 
-C++20 ile CPU üzerinde piksel ve çizgi çizimini öğrenmek için geliştirilen bir renderer projesi. Görüntü çıktısı, TinyRenderer'ın `TGAImage` sınıfı ile TGA formatında kaydedilir.
+A renderer project for learning pixel and line drawing on the CPU with C++20.
+Image output is saved in TGA format using TinyRenderer's `TGAImage` class.
 
-## Derleme ve çalıştırma
+## Building and running
 
-Gereksinimler: CMake 3.20 veya üzeri ve C++20 destekleyen bir derleyici.
+Requirements: CMake 3.20 or later and a compiler with C++20 support.
 
-Projenin kök klasöründe:
+From the project root:
 
 ```bash
 cmake -S . -B build
@@ -14,20 +15,32 @@ cmake --build build
 ./build/cpu_renderer
 ```
 
-İlk komut derleme dosyalarını hazırlar, ikinci komut programı derler. Program, çalıştırıldığı klasöre `framebuffer.tga` dosyasını yazar. Üretilen görüntü ve `build/` klasörü Git'e dahil edilmez.
+The first command generates the build files, and the second builds the program.
+The program writes `framebuffer.tga` to its working directory. The generated
+image and the `build/` directory are not tracked by Git.
 
-## Mevcut durum
+## Current state
 
-- 64 × 64 piksel RGB framebuffer oluşturuluyor.
-- `drawLineBarycentric`, iki uç nokta arasında `t` değerini `0.02` artırarak örnekleme yapıyor. Sabit örnek sayısı nedeniyle uzun çizgilerde boşluklar oluşabilir.
-- `drawLineInterpolated`, çizginin daha fazla değişen ekseninde birer piksel ilerleyip diğer koordinatı `float y` içinde tutup her adımda `(by-ay) / static_cast<float>(bx-ax)` eğimini ekleyerek hesaplıyor. Piksel yazılırken kesir kısmı atılıyor; önceki `std::round` yönteminden farklı pikseller seçilebilir. Dik eğimli (steep) çizgilerde x ve y eksenleri yer değiştiriyor; piksel yazılırken özgün koordinat sırası geri kullanılıyor. Uç noktalar işleme eksenine göre sıralandığı için ters yönde verilen çizgiler de aynı pikselleri boyuyor.
-- Örnek sahnede üç nokta arasında renkli çizgiler çiziliyor; uç noktalar beyaz ile işaretleniyor. Bir çizgi iki yönde çizilerek üst üste gelmesi inceleniyor.
+- A 64 × 64 RGB framebuffer is created.
+- `drawLineBarycentric` samples between two endpoints by incrementing `t` by
+  `0.02`. Because it uses a fixed number of samples, long lines may contain
+  gaps.
+- `drawLineInterpolated` advances one pixel at a time along the axis with the
+  greater change. It accumulates the absolute slope in `error` and adjusts the
+  integer `y` coordinate whenever the error exceeds half a pixel. For steep
+  lines, the x and y axes are swapped and restored when writing the pixel.
+  Endpoints are ordered along the traversal axis, so lines supplied in reverse
+  order color the same pixels.
+- The example scene draws colored lines between three points and marks the
+  endpoints in white. One line is drawn in both directions so their overlap can
+  be inspected.
 
-`main` şu anda `drawLineInterpolated` fonksiyonunu kullanıyor. Fonksiyon yatay, dikey ve dik eğimli çizgileri destekliyor. İki uç nokta aynıysa tek piksel boyanıyor.
+`main` currently uses `drawLineInterpolated`. The function supports horizontal,
+vertical, and steep lines. Coincident endpoints produce a single pixel.
 
-## Rastgele çizgi performans denemesi
+## Random-line performance benchmark
 
-Geçmiş ölçüm sonuçları [BENCHMARKS.md](BENCHMARKS.md) dosyasında tutulur.
+Historical measurements are stored in [BENCHMARKS.md](BENCHMARKS.md).
 
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
@@ -35,21 +48,38 @@ cmake --build build-release
 ./build-release/cpu_renderer --benchmark
 ```
 
-`--benchmark`, `drawLineInterpolated` fonksiyonunu tam 16 milyon kez çağırır. Her çağrıda uç noktalar 64 × 64 görüntünün sınırları içinde rastgele seçilir; her çizginin BGRA kanalları doğrudan çağrı içinde `std::rand() % 255` ile 0–254 aralığından seçilir. RGB framebuffer alfa kanalını kullanmaz. Koordinatlar için `std::mt19937(42)`, renkler için `std::srand(42)` kullanılır; sabit seed değerleri sayesinde aynı rastgele koordinat ve renk dizisi tekrar kullanılabilir. Terminalde yazılan süre, rastgele koordinat ve renk üretimini ve çizgi çizimini kapsar; TGA dosyasının kaydedilmesini kapsamaz. Parametresiz çalıştırma örnek sahneyi çizmeye devam eder.
+`--benchmark` calls `drawLineInterpolated` exactly 16 million times. On each
+call, endpoints are chosen randomly within the 64 × 64 image, and the BGRA
+channels are generated directly at the call site with `std::rand() % 255`,
+producing values from 0 through 254. The RGB framebuffer does not use the alpha
+channel. Coordinates use `std::mt19937(42)` and colors use `std::srand(42)`;
+these fixed seeds make the coordinate and color sequences reproducible. The
+reported time includes random coordinate and color generation as well as line
+drawing, but excludes writing the TGA file. Running without arguments continues
+to render the example scene.
 
-## Dosyalar
+## Files
 
-- `src/main.cpp`: Çizgi çizme fonksiyonları ve örnek sahne.
-- `third_party/tinyrenderer/`: TGA görüntü yardımcıları.
-- `CMakeLists.txt`: Derleme yapılandırması.
+- `src/main.cpp`: Line-drawing functions and the example scene.
+- `third_party/tinyrenderer/`: TGA image utilities.
+- `CMakeLists.txt`: Build configuration.
+- `BENCHMARKS.md`: Historical benchmark results.
 
-## İlerleme
+## Progress
 
-- CPU framebuffer ve piksel erişimi oluşturuldu.
-- TinyRenderer TGA çıktısı eklendi.
-- Sabit adımlı interpolasyon ve x koordinatını kullanan çizgi çizimi eklendi.
-- Eksenleri değiştirerek dik eğimli çizgiler desteklendi; güncel fonksiyon `drawLineInterpolated` olarak adlandırıldı.
-- Aynı uç noktalar desteklendi ve 16 milyon rastgele çizgi için performans denemesi eklendi.
-- Her pikselde `t` hesaplamak yerine y koordinatını eğimle artıran yöntem eklendi. Aynı Release ayarlarıyla yapılan üçer denemede ortanca süreler eski yöntem için 2,384 saniye, yeni yöntem için 2,391 saniye oldu; belirgin bir hız farkı gözlenmedi. Süreler rastgele sayı üretimini de kapsar ve sisteme göre değişir.
+- Created the CPU framebuffer and pixel access.
+- Added TinyRenderer TGA output.
+- Added fixed-step interpolation and x-axis-based line drawing.
+- Added support for steep lines by swapping axes and renamed the current
+  function to `drawLineInterpolated`.
+- Added support for coincident endpoints and a performance benchmark for 16
+  million random lines.
+- Replaced per-pixel `t` calculations with incremental slope updates. In three
+  runs under the same Release settings, the old method had a median time of
+  2.384 seconds and the incremental method 2.391 seconds; no meaningful speed
+  difference was observed. These times include random number generation and
+  vary by system.
+- Changed line rasterization to use an integer coordinate and accumulated error;
+  detailed measurements are recorded in `BENCHMARKS.md`.
 
-README, yeni özellikler ve derleme ya da kullanım değişiklikleriyle birlikte güncellenir.
+The README is updated whenever features, build steps, or usage change.
