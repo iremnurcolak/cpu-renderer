@@ -6,9 +6,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_executable(cpu_renderer
-    src/main.cpp
+add_library(renderer
+    src/line_renderer.cpp
     third_party/tinyrenderer/tgaimage.cpp
 )
 
-target_include_directories(cpu_renderer PRIVATE third_party/tinyrenderer)
+target_include_directories(renderer PUBLIC
+    src
+    third_party/tinyrenderer
+)
+
+add_executable(cpu_renderer src/main.cpp)
+target_link_libraries(cpu_renderer PRIVATE renderer)
+
+add_executable(obj_renderer src/obj_renderer.cpp)
+target_link_libraries(obj_renderer PRIVATE renderer)
