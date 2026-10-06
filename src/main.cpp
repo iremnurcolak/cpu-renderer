@@ -30,7 +30,9 @@ void drawLineInterpolated(int ax, int ay, int bx, int by, TGAImage &framebuffer,
         framebuffer.set(ax, ay, color);
         return;
     }
+
     bool isSteep = std::abs(ax-bx) < std::abs(ay-by);
+
     if(isSteep)
     {
         std::swap(ax, ay);
@@ -42,10 +44,10 @@ void drawLineInterpolated(int ax, int ay, int bx, int by, TGAImage &framebuffer,
         std::swap(ay, by);
     }
 
+
+    float y = ay;
     for(int x = ax; x <= bx; x++)
     {
-        float t = (x - ax) / static_cast<float>(bx - ax);
-        int y = std::round(((1-t) * ay) + (t * by));
         if(isSteep)
         {
             framebuffer.set(y, x, color);
@@ -54,6 +56,8 @@ void drawLineInterpolated(int ax, int ay, int bx, int by, TGAImage &framebuffer,
         {
             framebuffer.set(x, y, color);
         }
+
+        y += (by-ay) / static_cast<float>(bx-ax);
     }
 }
 

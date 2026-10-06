@@ -20,7 +20,7 @@ cmake --build build
 
 - 64 × 64 piksel RGB framebuffer oluşturuluyor.
 - `drawLineBarycentric`, iki uç nokta arasında `t` değerini `0.02` artırarak örnekleme yapıyor. Sabit örnek sayısı nedeniyle uzun çizgilerde boşluklar oluşabilir.
-- `drawLineInterpolated`, çizginin daha fazla değişen ekseninde birer piksel ilerleyip diğer koordinatı doğrusal interpolasyonla hesaplıyor. Dik eğimli (steep) çizgilerde x ve y eksenleri yer değiştiriyor; piksel yazılırken özgün koordinat sırası geri kullanılıyor. Uç noktalar işleme eksenine göre sıralandığı için ters yönde verilen çizgiler de aynı pikselleri boyuyor.
+- `drawLineInterpolated`, çizginin daha fazla değişen ekseninde birer piksel ilerleyip diğer koordinatı `float y` içinde tutup her adımda `(by-ay) / static_cast<float>(bx-ax)` eğimini ekleyerek hesaplıyor. Piksel yazılırken kesir kısmı atılıyor; önceki `std::round` yönteminden farklı pikseller seçilebilir. Dik eğimli (steep) çizgilerde x ve y eksenleri yer değiştiriyor; piksel yazılırken özgün koordinat sırası geri kullanılıyor. Uç noktalar işleme eksenine göre sıralandığı için ters yönde verilen çizgiler de aynı pikselleri boyuyor.
 - Örnek sahnede üç nokta arasında renkli çizgiler çiziliyor; uç noktalar beyaz ile işaretleniyor. Bir çizgi iki yönde çizilerek üst üste gelmesi inceleniyor.
 
 `main` şu anda `drawLineInterpolated` fonksiyonunu kullanıyor. Fonksiyon yatay, dikey ve dik eğimli çizgileri destekliyor. İki uç nokta aynıysa tek piksel boyanıyor.
@@ -48,5 +48,6 @@ cmake --build build-release
 - Sabit adımlı interpolasyon ve x koordinatını kullanan çizgi çizimi eklendi.
 - Eksenleri değiştirerek dik eğimli çizgiler desteklendi; güncel fonksiyon `drawLineInterpolated` olarak adlandırıldı.
 - Aynı uç noktalar desteklendi ve 16 milyon rastgele çizgi için performans denemesi eklendi.
+- Her pikselde `t` hesaplamak yerine y koordinatını eğimle artıran yöntem eklendi. Aynı Release ayarlarıyla yapılan üçer denemede ortanca süreler eski yöntem için 2,384 saniye, yeni yöntem için 2,391 saniye oldu; belirgin bir hız farkı gözlenmedi. Süreler rastgele sayı üretimini de kapsar ve sisteme göre değişir.
 
 README, yeni özellikler ve derleme ya da kullanım değişiklikleriyle birlikte güncellenir.
