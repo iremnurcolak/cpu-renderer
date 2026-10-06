@@ -1,21 +1,21 @@
-# Benchmark Sonuçları
+# Benchmark Results
 
-Benchmark, `drawLineInterpolated` fonksiyonunu 64 × 64 framebuffer üzerinde
-16 milyon rastgele çizgi için çalıştırır. Koordinat ve renk üretimi ölçüm
-süresine dahildir; TGA dosyasının diske yazılması dahil değildir.
+The benchmark runs `drawLineInterpolated` for 16 million random lines on a
+64 × 64 framebuffer. Coordinate and color generation are included in the
+measured time; writing the TGA file to disk is excluded.
 
-| Tarih | Yöntem | Koşular (s) | Ortanca (s) |
+| Date | Method | Runs (s) | Median (s) |
 |---|---|---:|---:|
-| Önceki ölçüm | Her pikselde `t` hesaplama | Ham değerler kaydedilmemiş | 2,384 |
-| Önceki ölçüm | `float y` değerini eğimle artırma | Ham değerler kaydedilmemiş | 2,391 |
-| 2026-10-06 | Tamsayı `y` ve birikimli `error` | 2,55459 / 2,51690 / 2,50517 | 2,51690 |
-| 2026-10-06 | Ölçeklenmiş tamsayı `ierror` (final) | 2,42865 / 2,37075 / 2,38202 | 2,38202 |
+| Previous measurement | Per-pixel `t` calculation | Raw values were not recorded | 2.384 |
+| Previous measurement | Incrementing `float y` by the slope | Raw values were not recorded | 2.391 |
+| 2026-10-06 | Integer `y` with accumulated `error` | 2.55459 / 2.51690 / 2.50517 | 2.51690 |
+| 2026-10-06 | Scaled integer `ierror` (final) | 2.42865 / 2.37075 / 2.38202 | 2.38202 |
 
-Son ölçüm Windows'ta Visual Studio 17 2022 CMake generator'ı ile Release
-yapılandırmasında alındı. Sonuçlar sistem yüküne ve donanıma göre
-değişebileceği için karşılaştırmalarda ortanca değer kullanılır.
+The latest measurements were taken on Windows in a Release configuration using
+the Visual Studio 17 2022 CMake generator. Results may vary with system load and
+hardware, so comparisons use the median value.
 
-## Çalıştırma
+## Running the benchmark
 
 ```powershell
 cmake -S . -B build
