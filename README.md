@@ -26,11 +26,12 @@ image and the `build/` directory are not tracked by Git.
   `0.02`. Because it uses a fixed number of samples, long lines may contain
   gaps.
 - `drawLineInterpolated` advances one pixel at a time along the axis with the
-  greater change. It accumulates the absolute slope in `error` and adjusts the
-  integer `y` coordinate whenever the error exceeds half a pixel. For steep
-  lines, the x and y axes are swapped and restored when writing the pixel.
-  Endpoints are ordered along the traversal axis, so lines supplied in reverse
-  order color the same pixels.
+  greater change. It uses an integer error term scaled by two and adjusts the
+  integer `y` coordinate whenever that term exceeds the distance along the
+  traversal axis. This avoids floating-point arithmetic inside the loop. For
+  steep lines, the x and y axes are swapped and restored when writing the
+  pixel. Endpoints are ordered along the traversal axis, so lines supplied in
+  reverse order color the same pixels.
 - The example scene draws colored lines between three points and marks the
   endpoints in white. One line is drawn in both directions so their overlap can
   be inspected.
@@ -41,6 +42,10 @@ vertical, and steep lines. Coincident endpoints produce a single pixel.
 ## Random-line performance benchmark
 
 Historical measurements are stored in [BENCHMARKS.md](BENCHMARKS.md).
+
+The final integer-error implementation completed 16 million lines in a median
+of **2.38202 seconds** across three Release runs on 2026-10-06. The individual
+runs took 2.42865, 2.37075, and 2.38202 seconds.
 
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
@@ -80,6 +85,8 @@ to render the example scene.
   difference was observed. These times include random number generation and
   vary by system.
 - Changed line rasterization to use an integer coordinate and accumulated error;
-  detailed measurements are recorded in `BENCHMARKS.md`.
+  the final version also scales the error term to perform the inner-loop
+  calculations entirely with integers. Detailed measurements are recorded in
+  `BENCHMARKS.md`.
 
 The README is updated whenever features, build steps, or usage change.
