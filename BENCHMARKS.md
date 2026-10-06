@@ -9,7 +9,8 @@ measured time; writing the TGA file to disk is excluded.
 | 2026-10-06 | Per-pixel `t` calculation | 2.76760 / 2.77883 / 2.77594 | 2.77594 |
 | 2026-10-06 | Incrementing `float y` by the slope | 2.05727 / 2.18249 / 2.01069 | 2.05727 |
 | 2026-10-06 | Integer `y` with accumulated `error` | 2.55459 / 2.51690 / 2.50517 | 2.51690 |
-| 2026-10-06 | Scaled integer `ierror` (final) | 2.42865 / 2.37075 / 2.38202 | 2.38202 |
+| 2026-10-06 | Scaled integer `ierror` with a branch | 2.42865 / 2.37075 / 2.38202 | 2.38202 |
+| 2026-10-06 | Branchless scaled integer `ierror` (final) | 2.05021 / 2.07506 / 2.05886 | 2.05886 |
 
 The latest measurements were taken on Windows in a Release configuration using
 the Visual Studio 17 2022 CMake generator. Results may vary with system load and

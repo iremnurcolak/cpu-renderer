@@ -43,9 +43,9 @@ vertical, and steep lines. Coincident endpoints produce a single pixel.
 
 Historical measurements are stored in [BENCHMARKS.md](BENCHMARKS.md).
 
-The final integer-error implementation completed 16 million lines in a median
-of **2.38202 seconds** across three Release runs on 2026-10-06. The individual
-runs took 2.42865, 2.37075, and 2.38202 seconds.
+The final branchless integer-error implementation completed 16 million lines in
+a median of **2.05886 seconds** across three Release runs on 2026-10-06. The
+individual runs took 2.05021, 2.07506, and 2.05886 seconds.
 
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
@@ -84,8 +84,8 @@ to render the example scene.
   a median time of 2.77594 seconds and the incremental method 2.05727 seconds.
   These times include random number generation and vary by system.
 - Changed line rasterization to use an integer coordinate and accumulated error;
-  the final version also scales the error term to perform the inner-loop
-  calculations entirely with integers. Detailed measurements are recorded in
-  `BENCHMARKS.md`.
+  the final version scales the error term and converts the threshold comparison
+  to an integer multiplier, avoiding an explicit branch in the inner loop.
+  Detailed measurements are recorded in `BENCHMARKS.md`.
 
 The README is updated whenever features, build steps, or usage change.

@@ -58,11 +58,10 @@ void drawLineInterpolated(int ax, int ay, int bx, int by, TGAImage &framebuffer,
             framebuffer.set(x, y, color);
         }
         ierror += 2 * std::abs(by - ay);
-        if(ierror > bx - ax)
-        {
-            y += by > ay ? 1 : -1;
-            ierror -= 2 * (bx - ax);
-        }
+
+        // Convert the threshold comparison to 0 or 1 to avoid an explicit branch.
+        y += (by > ay ? 1 : -1) * (ierror > bx - ax);
+        ierror -= 2 * (bx - ax) * (ierror > bx - ax);
     }
 }
 
