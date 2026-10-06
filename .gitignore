@@ -9,3 +9,4 @@ build-release/
 
 # Generated renderer output (keep model textures trackable).
 /framebuffer.tga
+/obj_framebuffer.tga
