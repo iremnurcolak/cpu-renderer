@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(renderer
     src/line_renderer.cpp
+    src/obj_renderer.cpp
     third_party/tinyrenderer/tgaimage.cpp
 )
 
@@ -18,6 +19,3 @@ target_include_directories(renderer PUBLIC
 
 add_executable(cpu_renderer src/main.cpp)
 target_link_libraries(cpu_renderer PRIVATE renderer)
-
-add_executable(obj_renderer src/obj_renderer.cpp)
-target_link_libraries(obj_renderer PRIVATE renderer)

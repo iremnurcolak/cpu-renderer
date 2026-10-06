@@ -4,6 +4,7 @@
 #include <random>
 #include <string_view>
 #include "line_renderer.h"
+#include "obj_renderer.h"
 #include "tgaimage.h"
 
 constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
@@ -13,11 +14,16 @@ constexpr TGAColor blue    = {255, 128,  64, 255};
 constexpr TGAColor yellow  = {  0, 200, 255, 255};
 int main(int argc, char** argv)
 {
+    if(argc > 1 && std::string_view(argv[1]) != "--benchmark")
+    {
+        return ObjRenderer{}.render(argv[1]);
+    }
+
     constexpr int width  = 64;
     constexpr int height = 64;
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
-    if(argc > 1 && std::string_view(argv[1]) == "--benchmark")
+    if(argc > 1)
     {
         constexpr int lineCount = 16'000'000;
         std::mt19937 random(42);
