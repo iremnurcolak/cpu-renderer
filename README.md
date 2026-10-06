@@ -39,6 +39,18 @@ image and the `build/` directory are not tracked by Git.
 `main` currently uses `drawLineInterpolated`. The function supports horizontal,
 vertical, and steep lines. Coincident endpoints produce a single pixel.
 
+`obj_renderer` is a separate entry point for OBJ experiments. Its parser is
+intentionally left unimplemented; add vertex and face loading in
+`src/obj_renderer.cpp`, then use the line functions through
+`#include "line_renderer.h"`.
+
+OBJ input files are stored in `assets/models/`. After implementing the parser,
+run the OBJ renderer from the project root with a model path:
+
+```powershell
+.\build\Release\obj_renderer.exe assets\models\diablo3_pose.obj
+```
+
 ## Random-line performance benchmark
 
 Historical measurements are stored in [BENCHMARKS.md](BENCHMARKS.md).
@@ -65,7 +77,12 @@ to render the example scene.
 
 ## Files
 
-- `src/main.cpp`: Line-drawing functions and the example scene.
+- `src/main.cpp`: Example scene and line benchmark entry point.
+- `src/line_renderer.h`: Reusable line-drawing interface.
+- `src/line_renderer.cpp`: Line-drawing implementations.
+- `src/obj_renderer.cpp`: OBJ renderer entry point; vertex and face parsing is
+  intentionally left as a TODO.
+- `assets/models/`: OBJ model files used as renderer input.
 - `third_party/tinyrenderer/`: TGA image utilities.
 - `CMakeLists.txt`: Build configuration.
 - `BENCHMARKS.md`: Historical benchmark results.
