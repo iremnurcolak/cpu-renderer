@@ -39,19 +39,42 @@ image and the `build/` directory are not tracked by Git.
 `main` currently uses `drawLineInterpolated`. The function supports horizontal,
 vertical, and steep lines. Coincident endpoints produce a single pixel.
 
-`obj_renderer` is a separate entry point for OBJ experiments. It opens the
-provided model, reads it line by line, and stores position records in a vertex
-vector. Each polygon face is parsed into temporary resolved vertex indices so it
-can be rendered immediately without storing all faces. Rendering those parsed
-indices is intentionally left as a TODO in `src/obj_renderer.cpp`. Line
-functions are available through `#include "line_renderer.h"`.
+## Rendering OBJ models
 
-OBJ input files are stored in `assets/models/`. After implementing the parser,
-run the OBJ renderer from the project root with a model path:
+OBJ models are rendered through the same `cpu_renderer` executable. Place your
+model in `assets/models/`, then build and run from the project root:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/cpu_renderer diablo3_pose.obj
+```
+
+A filename without a directory is resolved inside `assets/models/`. You can
+also supply an explicit relative or absolute path:
+
+```bash
+./build/cpu_renderer assets/models/diablo3_pose.obj
+./build/cpu_renderer /absolute/path/to/model.obj
+```
+
+Relative paths, including `assets/models/`, are resolved from the terminal's
+working directory. Run the commands above from the project root.
+
+On Windows with a multi-configuration generator, build and run with:
 
 ```powershell
-.\build\Release\obj_renderer.exe assets\models\diablo3_pose.obj
+cmake --build build --config Release
+.\build\Release\cpu_renderer.exe diablo3_pose.obj
 ```
+
+The renderer reads vertex positions (`v`) and polygon faces (`f`), including
+slash-separated face indices and negative vertex indices. It draws each face's
+outline in white on an 800 × 800 RGB image and writes `obj_framebuffer.tga` to
+the working directory. The terminal reports the loaded vertex and face counts.
+This is a wireframe render: textures, lighting, and filled faces are not used.
+The x and y coordinates are mapped from the range [-1, 1] to the image; models
+outside that range are not automatically fitted to the viewport.
 
 ## Random-line performance benchmark
 
@@ -79,11 +102,10 @@ to render the example scene.
 
 ## Files
 
-- `src/main.cpp`: Example scene and line benchmark entry point.
+- `src/main.cpp`: Example scene, line benchmark, and OBJ rendering entry point.
 - `src/line_renderer.h`: Reusable line-drawing interface.
 - `src/line_renderer.cpp`: Line-drawing implementations.
-- `src/obj_renderer.cpp`: OBJ renderer entry point, line-by-line model input,
-  vertex parsing, and face index parsing.
+- `src/obj_renderer.cpp`: Model path resolution, OBJ parsing, and wireframe rendering.
 - `assets/models/`: OBJ model files used as renderer input.
 - `third_party/tinyrenderer/`: TGA image utilities.
 - `CMakeLists.txt`: Build configuration.
@@ -106,5 +128,7 @@ to render the example scene.
   the final version scales the error term and converts the threshold comparison
   to an integer multiplier, avoiding an explicit branch in the inner loop.
   Detailed measurements are recorded in `BENCHMARKS.md`.
+
+- Added OBJ wireframe rendering and filename lookup inside `assets/models/`.
 
 The README is updated whenever features, build steps, or usage change.

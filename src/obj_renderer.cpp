@@ -1,4 +1,5 @@
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -27,10 +28,15 @@ int ObjRenderer::render(
     const std::string_view objPath,
     const std::string_view outputPath) const
 {
-    std::ifstream objFile{std::string(objPath)};
+    std::filesystem::path modelPath{std::string(objPath)};
+    if(!modelPath.has_parent_path())
+    {
+        modelPath = std::filesystem::path("assets") / "models" / modelPath;
+    }
+    std::ifstream objFile{modelPath};
     if(!objFile)
     {
-        std::cerr << "Failed to open OBJ file: " << objPath << '\n';
+        std::cerr << "Failed to open OBJ file: " << modelPath.string() << '\n';
         return 1;
     }
 
