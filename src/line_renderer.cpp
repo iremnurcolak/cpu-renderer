@@ -1,4 +1,5 @@
 #include "line_renderer.h"
+#include "colors.h"
 
 #include <cmath>
 #include <utility>

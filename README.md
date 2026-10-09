@@ -76,6 +76,25 @@ This is a wireframe render: textures, lighting, and filled faces are not used.
 The x and y coordinates are mapped from the range [-1, 1] to the image; models
 outside that range are not automatically fitted to the viewport.
 
+## Triangle rendering scaffold
+
+`drawTriangle` is declared in `src/triangle_renderer.h`, with an unfinished
+implementation in `src/triangle_renderer.cpp`. It takes three 2D endpoints,
+a framebuffer, and a color, matching the line-rendering interface. It is
+included in the `renderer` library but does not draw any pixels yet.
+
+To call it after implementing the function:
+
+```cpp
+#include "triangle_renderer.h"
+
+// Inside a function with an existing framebuffer and color:
+drawTriangle(7, 3, 12, 37, 62, 53, framebuffer, color);
+```
+
+The implementation contains TODOs for degenerate triangles, framebuffer bounds,
+inside-triangle detection, and pixel writes.
+
 ## Random-line performance benchmark
 
 Historical measurements are stored in [BENCHMARKS.md](BENCHMARKS.md).
@@ -105,6 +124,8 @@ to render the example scene.
 - `src/main.cpp`: Example scene, line benchmark, and OBJ rendering entry point.
 - `src/line_renderer.h`: Reusable line-drawing interface.
 - `src/line_renderer.cpp`: Line-drawing implementations.
+- `src/triangle_renderer.h`: Triangle-drawing interface.
+- `src/triangle_renderer.cpp`: Unfinished triangle rasterization scaffold.
 - `src/obj_renderer.cpp`: Model path resolution, OBJ parsing, and wireframe rendering.
 - `assets/models/`: OBJ model files used as renderer input.
 - `third_party/tinyrenderer/`: TGA image utilities.
