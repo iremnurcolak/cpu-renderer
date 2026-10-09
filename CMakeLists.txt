@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(renderer
     src/line_renderer.cpp
+    src/triangle_renderer.cpp
     src/obj_renderer.cpp
     third_party/tinyrenderer/tgaimage.cpp
 )

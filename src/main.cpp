@@ -3,15 +3,15 @@
 #include <iostream>
 #include <random>
 #include <string_view>
+#include "colors.h"
 #include "line_renderer.h"
 #include "obj_renderer.h"
+#include "triangle_renderer.h"
 #include "tgaimage.h"
 
-constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
-constexpr TGAColor green   = {  0, 255,   0, 255};
-constexpr TGAColor red     = {  0,   0, 255, 255};
-constexpr TGAColor blue    = {255, 128,  64, 255};
-constexpr TGAColor yellow  = {  0, 200, 255, 255};
+constexpr int width  = 128;
+constexpr int height = 128;
+
 int main(int argc, char** argv)
 {
     if(argc > 1 && std::string_view(argv[1]) != "--benchmark")
@@ -19,8 +19,7 @@ int main(int argc, char** argv)
         return ObjRenderer{}.render(argv[1]);
     }
 
-    constexpr int width  = 64;
-    constexpr int height = 64;
+
     TGAImage framebuffer(width, height, TGAImage::RGB);
 
     if(argc > 1)
@@ -52,18 +51,22 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    int ax =  7, ay =  3;
-    int bx = 12, by = 37;
-    int cx = 62, cy = 53;
+    // int ax =  7, ay =  3;
+    // int bx = 12, by = 37;
+    // int cx = 62, cy = 53;
 
-    drawLineInterpolated(ax, ay, bx, by, framebuffer, blue);
-    drawLineInterpolated(cx, cy, bx, by, framebuffer, green);
-    drawLineInterpolated(cx, cy, ax, ay, framebuffer, yellow);
-    drawLineInterpolated(ax, ay, cx, cy, framebuffer, red);
+    // drawLineInterpolated(ax, ay, bx, by, framebuffer, blue);
+    // drawLineInterpolated(cx, cy, bx, by, framebuffer, green);
+    // drawLineInterpolated(cx, cy, ax, ay, framebuffer, yellow);
+    // drawLineInterpolated(ax, ay, cx, cy, framebuffer, red);
 
-    framebuffer.set(ax, ay, white);
-    framebuffer.set(bx, by, white);
-    framebuffer.set(cx, cy, white);
+    drawTriangleWithMyScanlineV2(  7, 45, 35, 100, 45,  60, framebuffer, red);
+    drawTriangleWithMyScanlineV2(120, 35, 90,   5, 45, 110, framebuffer, white);
+    drawTriangleWithMyScanlineV2(115, 83, 80,  90, 85, 120, framebuffer, green);
+
+    // framebuffer.set(ax, ay, white);
+    // framebuffer.set(bx, by, white);
+    // framebuffer.set(cx, cy, white);
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;
