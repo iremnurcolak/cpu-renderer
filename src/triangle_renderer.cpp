@@ -166,6 +166,13 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
     findTriangleBoundingBox(ax, ay, bx, by, cx, cy, bottomLeftX, bottomLeftY, topRightX, topRightY);
 
     double totalArea = calculateTriangleAreaSigned(ax, ay, bx, by, cx, cy);
+
+    // do not draw back-face triangles and triangles that has area less than 1 pixel
+    // negative area means the normal of the triangle points back
+    if(totalArea < 1)
+    {
+        return;
+    }
 #pragma omp parallel for
 
     for (int x = bottomLeftX; x <= topRightX; x++)
