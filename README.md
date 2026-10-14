@@ -1,6 +1,6 @@
 # CPU Renderer
 
-A renderer project for learning pixel and line drawing on the CPU with C++20.
+A renderer project for learning pixel, line, and triangle drawing on the CPU with C++20.
 Image output is saved in TGA format using TinyRenderer's `TGAImage` class.
 
 ## Building and running
@@ -21,7 +21,7 @@ image and the `build/` directory are not tracked by Git.
 
 ## Current state
 
-- A 64 × 64 RGB framebuffer is created.
+- A 128 × 128 RGB framebuffer is created for the example scene.
 - `drawLineBarycentric` samples between two endpoints by incrementing `t` by
   `0.02`. Because it uses a fixed number of samples, long lines may contain
   gaps.
@@ -32,17 +32,15 @@ image and the `build/` directory are not tracked by Git.
   steep lines, the x and y axes are swapped and restored when writing the
   pixel. Endpoints are ordered along the traversal axis, so lines supplied in
   reverse order color the same pixels.
-- The example scene draws colored lines between three points and marks the
-  endpoints in white. One line is drawn in both directions so their overlap can
-  be inspected.
+- The example scene fills three colored triangles with bounding-box rasterization.
 
-`main` currently uses `drawLineInterpolated`. The function supports horizontal,
-vertical, and steep lines. Coincident endpoints produce a single pixel.
+`drawLineInterpolated` supports horizontal, vertical, and steep lines.
+Coincident endpoints produce a single pixel.
 
 ## Rendering OBJ models
 
 OBJ models are rendered through the same `cpu_renderer` executable. Place your
-model in `assets/models/`, then build and run from the project root:
+model in `obj/`, then build and run from the project root:
 
 ```bash
 cmake -S . -B build
@@ -50,15 +48,30 @@ cmake --build build
 ./build/cpu_renderer diablo3_pose.obj
 ```
 
-A filename without a directory is resolved inside `assets/models/`. You can
-also supply an explicit relative or absolute path:
+Select the drawing mode with `--wireframe` or `--filled`, before or after the
+model path. Without a mode flag, filled rendering is used.
 
 ```bash
-./build/cpu_renderer assets/models/diablo3_pose.obj
+./build/cpu_renderer --wireframe diablo3_pose.obj
+./build/cpu_renderer --filled obj/african_head/african_head.obj
+```
+
+Wireframe output is saved to `obj_wireframe.tga`; filled output is saved to
+`obj_filled.tga`. Mode flags require a model and cannot be combined with
+each other or with `--benchmark`.
+
+A filename without a directory is looked up first as `obj/<filename>`, then as
+`obj/<stem>/<filename>`. For example, `diablo3_pose.obj` resolves to
+`obj/diablo3_pose/diablo3_pose.obj`. Models stored in differently named folders
+require an explicit path, such as `obj/boggie/head.obj`.
+You can also supply an explicit relative or absolute path:
+
+```bash
+./build/cpu_renderer obj/diablo3_pose/diablo3_pose.obj
 ./build/cpu_renderer /absolute/path/to/model.obj
 ```
 
-Relative paths, including `assets/models/`, are resolved from the terminal's
+Relative paths, including `obj/`, are resolved from the terminal's
 working directory. Run the commands above from the project root.
 
 On Windows with a multi-configuration generator, build and run with:
@@ -69,31 +82,40 @@ cmake --build build --config Release
 ```
 
 The renderer reads vertex positions (`v`) and polygon faces (`f`), including
-slash-separated face indices and negative vertex indices. It draws each face's
-outline in white on an 800 × 800 RGB image and writes `obj_framebuffer.tga` to
-the working directory. The terminal reports the loaded vertex and face counts.
-This is a wireframe render: textures, lighting, and filled faces are not used.
+slash-separated face indices and negative vertex indices. The executable currently
+fills each triangle with a random color on an 800 × 800 RGB image and writes
+`obj_filled.tga` to the working directory. The terminal reports the loaded vertex
+and face counts. Textures, lighting, and depth testing are not applied.
 The x and y coordinates are mapped from the range [-1, 1] to the image; models
 outside that range are not automatically fitted to the viewport.
 
-## Triangle rendering scaffold
+`ObjRenderer` shares OBJ parsing, coordinate projection, and image output between
+its two drawing modes:
 
-`drawTriangle` is declared in `src/triangle_renderer.h`, with an unfinished
-implementation in `src/triangle_renderer.cpp`. It takes three 2D endpoints,
-a framebuffer, and a color, matching the line-rendering interface. It is
-included in the `renderer` library but does not draw any pixels yet.
+```cpp
+ObjRenderer renderer;
+renderer.renderFilled("diablo3_pose.obj", "obj_filled.tga");
+renderer.renderWireframe("diablo3_pose.obj", "obj_wireframe.tga");
+```
 
-To call it after implementing the function:
+Wireframe mode draws face boundaries in white. Filled mode splits polygonal
+faces into a fan of triangles; this requires convex polygonal faces.
+
+## Triangle rendering
+
+`src/triangle_renderer.h` declares three filled-triangle drawing functions:
+
+- `drawTriangleWithMyScanlineV1`: Floating-point scanline intersections;
+  vertex y coordinates must be distinct.
+- `drawTriangleWithMyScanlineV2`: Integer scanline intersections.
+- `drawTriangleWithBoundBox`: Bounding-box traversal with barycentric inside tests.
 
 ```cpp
 #include "triangle_renderer.h"
 
 // Inside a function with an existing framebuffer and color:
-drawTriangle(7, 3, 12, 37, 62, 53, framebuffer, color);
+drawTriangleWithBoundBox(7, 3, 12, 37, 62, 53, framebuffer, color);
 ```
-
-The implementation contains TODOs for degenerate triangles, framebuffer bounds,
-inside-triangle detection, and pixel writes.
 
 ## Random-line performance benchmark
 
@@ -110,7 +132,7 @@ cmake --build build-release
 ```
 
 `--benchmark` calls `drawLineInterpolated` exactly 16 million times. On each
-call, endpoints are chosen randomly within the 64 × 64 image, and the BGRA
+call, endpoints are chosen randomly within the 128 × 128 image, and the BGRA
 channels are generated directly at the call site with `std::rand() % 255`,
 producing values from 0 through 254. The RGB framebuffer does not use the alpha
 channel. Coordinates use `std::mt19937(42)` and colors use `std::srand(42)`;
@@ -125,9 +147,9 @@ to render the example scene.
 - `src/line_renderer.h`: Reusable line-drawing interface.
 - `src/line_renderer.cpp`: Line-drawing implementations.
 - `src/triangle_renderer.h`: Triangle-drawing interface.
-- `src/triangle_renderer.cpp`: Unfinished triangle rasterization scaffold.
-- `src/obj_renderer.cpp`: Model path resolution, OBJ parsing, and wireframe rendering.
-- `assets/models/`: OBJ model files used as renderer input.
+- `src/triangle_renderer.cpp`: Scanline and bounding-box triangle rasterization.
+- `src/obj_renderer.cpp`: Model path resolution, OBJ parsing, and wireframe or filled rendering.
+- `obj/`: OBJ models and associated model textures, grouped in subfolders.
 - `third_party/tinyrenderer/`: TGA image utilities.
 - `CMakeLists.txt`: Build configuration.
 - `BENCHMARKS.md`: Historical benchmark results.
@@ -150,6 +172,7 @@ to render the example scene.
   to an integer multiplier, avoiding an explicit branch in the inner loop.
   Detailed measurements are recorded in `BENCHMARKS.md`.
 
-- Added OBJ wireframe rendering and filename lookup inside `assets/models/`.
+- Added OBJ wireframe and random-color filled rendering with shared parsing.
+- Moved model lookup to `obj/`, supporting both direct and model-named subfolders.
 
 The README is updated whenever features, build steps, or usage change.

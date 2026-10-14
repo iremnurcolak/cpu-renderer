@@ -2,11 +2,14 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "colors.h"
 #include "line_renderer.h"
+#include "triangle_renderer.h"
 #include "obj_renderer.h"
 #include "tgaimage.h"
 
@@ -22,16 +25,76 @@ struct Vertex
     float z = 0.0F;
 };
 
+struct ScreenPoint
+{
+    int x;
+    int y;
+};
+
+using FaceDrawer = void (*)(const std::vector<ScreenPoint>&, TGAImage&);
+
+/**
+ * @brief Draw a closed polygon boundary in white.
+ * @pre points must contain at least three vertices.
+ * @param[in] points Ordered projected face vertices.
+ * @param[in,out] framebuffer Image receiving the face boundary.
+ */
+void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer)
+{
+    const ScreenPoint& first = points.front();
+    ScreenPoint previous = first;
+    for(std::size_t i = 1; i < points.size(); ++i)
+    {
+        const ScreenPoint& point = points[i];
+        drawLineInterpolated(previous.x, previous.y, point.x, point.y, framebuffer, white);
+        previous = point;
+    }
+    drawLineInterpolated(previous.x, previous.y, first.x, first.y, framebuffer, white);
 }
 
-int ObjRenderer::render(
-    const std::string_view objPath,
-    const std::string_view outputPath) const
+/**
+ * @brief Triangulate a face as a fan and fill each triangle with a random color.
+ * @pre points must describe a convex polygon with at least three vertices.
+ * @pre Each projected fan triangle must have nonzero area.
+ * @param[in] points Ordered projected face vertices.
+ * @param[in,out] framebuffer Image receiving the filled triangles.
+ */
+void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer)
+{
+    static thread_local std::mt19937 randomEngine{std::random_device{}()};
+    std::uniform_int_distribution<int> channel(0, 255);
+    const ScreenPoint& first = points.front();
+    for(std::size_t i = 1; i + 1 < points.size(); ++i)
+    {
+        const ScreenPoint& b = points[i];
+        const ScreenPoint& c = points[i + 1];
+        const TGAColor color = {
+            static_cast<std::uint8_t>(channel(randomEngine)),
+            static_cast<std::uint8_t>(channel(randomEngine)),
+            static_cast<std::uint8_t>(channel(randomEngine)),
+            255};
+        drawTriangleWithBoundingBox(first.x, first.y, b.x, b.y, c.x, c.y, framebuffer, color);
+    }
+}
+
+/**
+ * @brief Read an OBJ model, project its faces, and save the rendered image.
+ * @note Supports slash-separated and negative vertex indices.
+ * @note Projects x/y from [-1, 1] onto an 800 x 800 framebuffer.
+ * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
+ * @param[in] objPath Explicit OBJ path or filename looked up under obj/.
+ * @param[in] outputPath Destination TGA file path.
+ * @param[in] drawFace Callback used to draw each valid projected face.
+ */
+int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer drawFace)
 {
     std::filesystem::path modelPath{std::string(objPath)};
     if(!modelPath.has_parent_path())
     {
-        modelPath = std::filesystem::path("assets") / "models" / modelPath;
+        const std::filesystem::path modelRoot{"obj"};
+        const std::filesystem::path directPath = modelRoot / modelPath;
+        const std::filesystem::path nestedPath = modelRoot / modelPath.stem() / modelPath;
+        modelPath = std::filesystem::exists(directPath) ? directPath : nestedPath;
     }
     std::ifstream objFile{modelPath};
     if(!objFile)
@@ -107,30 +170,18 @@ int ObjRenderer::render(
             {
                 ++faceCount;
 
-                constexpr TGAColor white = {255, 255, 255, 255};
                 constexpr float xScale = (framebufferWidth - 1) * 0.5F;
                 constexpr float yScale = (framebufferHeight - 1) * 0.5F;
-
-                const Vertex& firstVertex = vertices[faceVertexIndices.front()];
-                const int firstX = static_cast<int>((firstVertex.x + 1.0F) * xScale);
-                const int firstY = static_cast<int>((firstVertex.y + 1.0F) * yScale);
-                int previousX = firstX;
-                int previousY = firstY;
-
-                for(std::size_t i = 1; i < faceVertexIndices.size(); ++i)
+                std::vector<ScreenPoint> points;
+                points.reserve(faceVertexIndices.size());
+                for(const std::size_t index : faceVertexIndices)
                 {
-                    const Vertex& vertex = vertices[faceVertexIndices[i]];
-                    const int x = static_cast<int>((vertex.x + 1.0F) * xScale);
-                    const int y = static_cast<int>((vertex.y + 1.0F) * yScale);
-
-                    drawLineInterpolated(
-                        previousX, previousY, x, y, framebuffer, white);
-                    previousX = x;
-                    previousY = y;
+                    const Vertex& vertex = vertices[index];
+                    points.push_back({
+                        static_cast<int>((vertex.x + 1.0F) * xScale),
+                        static_cast<int>((vertex.y + 1.0F) * yScale)});
                 }
-
-                drawLineInterpolated(
-                    previousX, previousY, firstX, firstY, framebuffer, white);
+                drawFace(points, framebuffer);
             }
         }
     }
@@ -146,4 +197,16 @@ int ObjRenderer::render(
     }
 
     return 0;
+}
+
+}
+
+int ObjRenderer::renderWireframe(std::string_view objPath, std::string_view outputPath) const
+{
+    return renderObj(objPath, outputPath, drawWireframeFace);
+}
+
+int ObjRenderer::renderFilled(std::string_view objPath, std::string_view outputPath) const
+{
+    return renderObj(objPath, outputPath, drawFilledFace);
 }

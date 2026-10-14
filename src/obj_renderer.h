@@ -5,10 +5,28 @@
 class ObjRenderer
 {
 public:
-    // Render OBJ face edges as a wireframe and save the result to a TGA file.
-    // Map x/y coordinates from [-1, 1] to the viewport without fitting the model.
-    // Return 0 on success or 1 if the model cannot be read or the image saved.
-    int render(
+    /**
+     * @brief Render OBJ face boundaries as white line segments.
+     * @note Output is an 800 x 800 TGA image.
+     * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
+     * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
+     * @param[in] objPath OBJ path or filename resolved under obj/.
+     * @param[in] outputPath Destination TGA file path.
+     */
+    int renderWireframe(
         std::string_view objPath,
-        std::string_view outputPath = "obj_framebuffer.tga") const;
+        std::string_view outputPath = "obj_wireframe.tga") const;
+
+    /**
+     * @brief Render OBJ faces as randomly colored filled triangles.
+     * @pre Polygonal faces must be convex for fan triangulation.
+     * @note No depth testing, lighting, or textures are applied.
+     * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
+     * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
+     * @param[in] objPath OBJ path or filename resolved under obj/.
+     * @param[in] outputPath Destination TGA file path.
+     */
+    int renderFilled(
+        std::string_view objPath,
+        std::string_view outputPath = "obj_filled.tga") const;
 };
