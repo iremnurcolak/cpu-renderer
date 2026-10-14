@@ -108,13 +108,13 @@ faces into a fan of triangles; this requires convex polygonal faces.
 - `drawTriangleWithMyScanlineV1`: Floating-point scanline intersections;
   vertex y coordinates must be distinct.
 - `drawTriangleWithMyScanlineV2`: Integer scanline intersections.
-- `drawTriangleWithBoundBox`: Bounding-box traversal with barycentric inside tests.
+- `drawTriangleWithBoundingBox`: Bounding-box traversal with barycentric inside tests.
 
 ```cpp
 #include "triangle_renderer.h"
 
 // Inside a function with an existing framebuffer and color:
-drawTriangleWithBoundBox(7, 3, 12, 37, 62, 53, framebuffer, color);
+drawTriangleWithBoundingBox(7, 3, 12, 37, 62, 53, framebuffer, color);
 ```
 
 ## Random-line performance benchmark
