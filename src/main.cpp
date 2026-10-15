@@ -13,7 +13,9 @@ constexpr int width  = 128;
 constexpr int height = 128;
 
 /**
- * @brief Run the example scene, OBJ renderer, or random-line benchmark.
+ * @brief Run the grayscale triangle example, OBJ renderer, or line benchmark.
+ * @note Without arguments, save three intensity-interpolated triangles to framebuffer.tga.
+ * @note The example and benchmark use a 128 x 128 grayscale framebuffer.
  * @note OBJ rendering defaults to filled mode; --wireframe selects face boundaries.
  * @note --benchmark runs the line benchmark and cannot be combined with a model.
  * @return 0 on success; 1 for invalid arguments or an OBJ rendering failure.
@@ -67,7 +69,7 @@ int main(int argc, char** argv)
             : renderer.renderFilled(modelPath);
     }
 
-    TGAImage framebuffer(width, height, TGAImage::RGB);
+    TGAImage framebuffer(width, height, TGAImage::GRAYSCALE);
 
     if(benchmark)
     {
@@ -98,26 +100,10 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // int ax =  7, ay =  3;
-    // int bx = 12, by = 37;
-    // int cx = 62, cy = 53;
 
-    // drawLineInterpolated(ax, ay, bx, by, framebuffer, blue);
-    // drawLineInterpolated(cx, cy, bx, by, framebuffer, green);
-    // drawLineInterpolated(cx, cy, ax, ay, framebuffer, yellow);
-    // drawLineInterpolated(ax, ay, cx, cy, framebuffer, red);
-
-    //drawTriangleWithMyScanlineV2(  7, 45, 35, 100, 45,  60, framebuffer, red);
-    //drawTriangleWithMyScanlineV2(120, 35, 90,   5, 45, 110, framebuffer, white);
-    //drawTriangleWithMyScanlineV2(115, 83, 80,  90, 85, 120, framebuffer, green);
-
-    // framebuffer.set(ax, ay, white);
-    // framebuffer.set(bx, by, white);
-    // framebuffer.set(cx, cy, white);
-
-    drawTriangleWithBoundingBox(  7, 45, 35, 100, 45,  60, framebuffer, red);
-    drawTriangleWithBoundingBox(120, 35, 90,   5, 45, 110, framebuffer, white);
-    drawTriangleWithBoundingBox(115, 83, 80,  90, 85, 120, framebuffer, green);
+    drawTriangleWithBoundingBox(  7, 45, 45,  60, 35, 100, 0, 255, 128, framebuffer);
+    drawTriangleWithBoundingBox(120, 35, 45, 110, 90,   5, 255, 128, 0, framebuffer);
+    drawTriangleWithBoundingBox(115, 83, 85, 120, 80,  90, 128, 0, 255, framebuffer);
 
     framebuffer.write_tga_file("framebuffer.tga");
     return 0;

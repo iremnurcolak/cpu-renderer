@@ -13,3 +13,5 @@ build-release/
 /obj_wireframe.tga
 /obj_filled.tga
 .DS_Store
+
+/framebuffer-preview.png
