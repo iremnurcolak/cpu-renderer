@@ -51,9 +51,10 @@ void drawTriangleWithMyScanlineV2(
 
 /**
  * @brief Fill a triangle by testing barycentric coordinates within its bounding box.
- * @pre The triangle must have nonzero area.
  * @pre Integer intermediate values in the area calculation must fit in int.
- * @note Either winding order is accepted, and triangle edges are included.
+ * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note With y increasing upward, only counterclockwise triangles are drawn.
+ * @note Triangle edges are included.
  * @param[in] ax X coordinate of vertex a.
  * @param[in] ay Y coordinate of vertex a.
  * @param[in] bx X coordinate of vertex b.

@@ -55,7 +55,7 @@ void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebu
 /**
  * @brief Triangulate a face as a fan and fill each triangle with a random color.
  * @pre points must describe a convex polygon with at least three vertices.
- * @pre Each projected fan triangle must have nonzero area.
+ * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @param[in] points Ordered projected face vertices.
  * @param[in,out] framebuffer Image receiving the filled triangles.
  */
@@ -201,11 +201,29 @@ int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer 
 
 }
 
+/**
+ * @brief Render OBJ face boundaries as white line segments.
+ * @note Output is an 800 x 800 TGA image.
+ * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
+ * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
+ * @param[in] objPath OBJ path or filename resolved under obj/.
+ * @param[in] outputPath Destination TGA file path.
+ */
 int ObjRenderer::renderWireframe(std::string_view objPath, std::string_view outputPath) const
 {
     return renderObj(objPath, outputPath, drawWireframeFace);
 }
 
+/**
+ * @brief Render OBJ faces as randomly colored filled triangles.
+ * @pre Polygonal faces must be convex for fan triangulation.
+ * @note Back-facing triangles and triangles with signed area below 1 are skipped.
+ * @note No depth testing, lighting, or textures are applied.
+ * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
+ * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
+ * @param[in] objPath OBJ path or filename resolved under obj/.
+ * @param[in] outputPath Destination TGA file path.
+ */
 int ObjRenderer::renderFilled(std::string_view objPath, std::string_view outputPath) const
 {
     return renderObj(objPath, outputPath, drawFilledFace);

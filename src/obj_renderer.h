@@ -20,6 +20,7 @@ public:
     /**
      * @brief Render OBJ faces as randomly colored filled triangles.
      * @pre Polygonal faces must be convex for fan triangulation.
+     * @note Back-facing triangles and triangles with signed area below 1 are skipped.
      * @note No depth testing, lighting, or textures are applied.
      * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
      * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
