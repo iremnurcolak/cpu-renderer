@@ -198,8 +198,8 @@ void drawTriangleWithMyScanlineV2(int ax, int ay, int bx, int by, int cx, int cy
  * @param[in] color Pixel color in BGRA order.
  */
 void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
-                              TGAImage &framebuffer,
-                              TGAColor color)
+                                int az, int bz, int cz, // for colors
+                                TGAImage &framebuffer)
 {
     int bottomLeftX;
     int bottomLeftY;
@@ -230,7 +230,9 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
                 continue;
                 //the vertex is not inside the triangle
             }
-            framebuffer.set(x, y, color);
+            
+            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
+            framebuffer.set(x, y, {z});
         }
     }
 }
