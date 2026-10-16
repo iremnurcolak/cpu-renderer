@@ -2,6 +2,8 @@
 #include "line_renderer.h"
 #include "colors.h"
 
+#include <algorithm>
+
 /**
  * @brief Find the axis-aligned bounding box of three vertices.
  * @note Corner names assume the y axis increases upward.
@@ -183,13 +185,12 @@ void drawTriangleWithMyScanlineV2(int ax, int ay, int bx, int by, int cx, int cy
 }
 
 /**
- * @brief Fill a triangle with barycentrically interpolated vertex intensities.
+ * @brief Fill a triangle with barycentrically interpolated RGB vertex colors.
  * @pre Integer intermediate values in the area calculation must fit in int.
  * @note Triangles with signed area below 1 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
- * @note Triangle edges are included. Vertex intensities are not depth values.
- * @note Only the first BGRA channel is written: grayscale for GRAYSCALE images,
- *       blue for RGB/RGBA images; the other channels are zero.
+ * @note Triangle edges are included. B, G, and R channels are interpolated separately.
+ * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
  * @param[in] ax X coordinate of vertex a.
  * @param[in] ay Y coordinate of vertex a.
  * @param[in] bx X coordinate of vertex b.
@@ -197,12 +198,12 @@ void drawTriangleWithMyScanlineV2(int ax, int ay, int bx, int by, int cx, int cy
  * @param[in] cx X coordinate of vertex c.
  * @param[in] cy Y coordinate of vertex c.
  * @param[in,out] framebuffer Image receiving the rendered pixels.
- * @param[in] az Intensity at vertex A, in [0, 255].
- * @param[in] bz Intensity at vertex B, in [0, 255].
- * @param[in] cz Intensity at vertex C, in [0, 255].
+ * @param[in] colorA Color at vertex A in BGRA order.
+ * @param[in] colorB Color at vertex B in BGRA order.
+ * @param[in] colorC Color at vertex C in BGRA order.
  */
 void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
-                                int az, int bz, int cz,
+                                const TGAColor& colorA, const TGAColor& colorB, const TGAColor& colorC,
                                 TGAImage &framebuffer)
 {
     int bottomLeftX;
@@ -235,8 +236,16 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
                 //the vertex is not inside the triangle
             }
             
-            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
-            framebuffer.set(x, y, {z});
+            TGAColor color;
+            for(int channel = 0; channel < 3; ++channel)
+            {
+                const double value = alpha * colorA.bgra[channel]
+                    + beta * colorB.bgra[channel]
+                    + gamma * colorC.bgra[channel];
+                color.bgra[channel] = static_cast<std::uint8_t>(std::clamp(value, 0.0, 255.0));
+            }
+            color.bgra[3] = 255;
+            framebuffer.set(x, y, color);
         }
     }
 }

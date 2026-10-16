@@ -21,7 +21,7 @@ image and the `build/` directory are not tracked by Git.
 
 ## Current state
 
-- A 128 × 128 grayscale framebuffer is created for the example scene.
+- A 128 × 128 RGB framebuffer is created for the example scene.
 - `drawLineBarycentric` samples between two endpoints by incrementing `t` by
   `0.02`. Because it uses a fixed number of samples, long lines may contain
   gaps.
@@ -33,7 +33,7 @@ image and the `build/` directory are not tracked by Git.
   pixel. Endpoints are ordered along the traversal axis, so lines supplied in
   reverse order color the same pixels.
 - The example scene fills three counterclockwise triangles with bounding-box
-  rasterization and interpolates a separate 0–255 intensity at each vertex.
+  rasterization and interpolates the RGB colors assigned to its vertices.
 
 `drawLineInterpolated` supports horizontal, vertical, and steep lines.
 Coincident endpoints produce a single pixel.
@@ -84,12 +84,9 @@ cmake --build build --config Release
 
 The renderer reads vertex positions (`v`) and polygon faces (`f`), including
 slash-separated face indices and negative vertex indices. The executable currently
-interpolates three random vertex intensities per triangle on an 800 × 800 RGB
-image and writes
+fills each triangle with a random color on an 800 × 800 RGB image and writes
 `obj_filled.tga` to the working directory. The terminal reports the loaded vertex
-and face counts. The current rasterizer writes only the first BGRA channel, so
-filled OBJ images appear in blue tones; the example scene uses a grayscale
-framebuffer instead. Textures, lighting, and depth testing are not applied.
+and face counts. Textures, lighting, and depth testing are not applied.
 The x and y coordinates are mapped from the range [-1, 1] to the image; models
 outside that range are not automatically fitted to the viewport.
 
@@ -115,31 +112,27 @@ degenerate triangles when y increases upward.
   vertex y coordinates must be distinct.
 - `drawTriangleWithMyScanlineV2`: Integer scanline intersections.
 - `drawTriangleWithBoundingBox`: Bounding-box traversal with barycentric inside
-  tests and interpolation of per-vertex intensities (`az`, `bz`, `cz`). These
-  values are in [0, 255] and currently represent brightness, not depth.
+  tests and separate interpolation of the B, G, and R channels of three vertex
+  colors (`colorA`, `colorB`, `colorC`). Output alpha is always 255.
 
 ```cpp
 #include "triangle_renderer.h"
+#include "colors.h"
 
-TGAImage framebuffer(128, 128, TGAImage::GRAYSCALE);
-// Counterclockwise vertices, followed by their respective intensities.
-drawTriangleWithBoundingBox(7, 45, 45, 60, 35, 100, 0, 255, 128, framebuffer);
+TGAImage framebuffer(128, 128, TGAImage::RGB);
+// Counterclockwise vertices, followed by their respective colors.
+drawTriangleWithBoundingBox(7, 45, 45, 60, 35, 100, red, green, blue, framebuffer);
 framebuffer.write_tga_file("framebuffer.tga");
 ```
 
-## Viewing grayscale output
+Pass the same color for all three vertices to draw a uniformly colored triangle.
+The OBJ renderer uses this to preserve its random color per triangle.
 
-The example writes an 8-bit, RLE-compressed grayscale TGA (Type 11).
-Some TGA preview extensions support only true-color images and cannot display it.
-[Xarmina TGA Viewer](https://marketplace.visualstudio.com/items?itemName=Xarmina.tga-preview)
-lists support for Type 11 grayscale images. Install it with:
+## Viewing output
 
-```bash
-code --install-extension Xarmina.tga-preview
-```
-
-In VS Code, use **Reopen Editor With...** on the TGA editor tab to select the
-viewer. A PNG preview can also be generated on macOS without changing the renderer:
+The example writes a 24-bit, RLE-compressed RGB TGA (Type 10). Open
+`framebuffer.tga` in a TGA viewer, such as a VS Code TGA preview extension.
+A PNG preview can also be generated on macOS:
 
 ```bash
 sips -s format png framebuffer.tga --out framebuffer-preview.png
@@ -166,8 +159,8 @@ cmake --build build-release
 `--benchmark` calls `drawLineInterpolated` exactly 16 million times. On each
 call, endpoints are chosen randomly within the 128 × 128 image, and the BGRA
 channels are generated directly at the call site with `std::rand() % 255`,
-producing values from 0 through 254. The current grayscale framebuffer uses
-only the first channel as brightness. Coordinates use `std::mt19937(42)` and colors use `std::srand(42)`;
+producing values from 0 through 254. The RGB framebuffer uses the three color
+channels and ignores alpha. Coordinates use `std::mt19937(42)` and colors use `std::srand(42)`;
 these fixed seeds make the coordinate and color sequences reproducible. The
 reported time includes random coordinate and color generation as well as line
 drawing, but excludes writing the TGA file. Running without arguments continues
@@ -205,7 +198,7 @@ to render the example scene.
   Detailed measurements are recorded in `BENCHMARKS.md`.
 
 - Added OBJ wireframe and filled rendering with shared parsing.
-- Added per-vertex intensity interpolation and a grayscale triangle example.
+- Added per-vertex RGB color interpolation and a color-gradient triangle example.
 - Moved model lookup to `obj/`, supporting both direct and model-named subfolders.
 
 The README is updated whenever features, build steps, or usage change.

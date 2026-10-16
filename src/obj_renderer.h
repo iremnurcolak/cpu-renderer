@@ -18,9 +18,8 @@ public:
         std::string_view outputPath = "obj_wireframe.tga") const;
 
     /**
-     * @brief Render OBJ faces with randomly sampled vertex intensities.
+     * @brief Render OBJ faces as randomly colored filled triangles.
      * @pre Polygonal faces must be convex for fan triangulation.
-     * @note Output remains RGB; interpolated intensities appear in the blue channel.
      * @note Back-facing triangles and triangles with signed area below 1 are skipped.
      * @note No depth testing, lighting, or textures are applied.
      * @note Model x/y coordinates map from [-1, 1] without automatic fitting.

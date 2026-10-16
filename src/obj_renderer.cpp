@@ -53,9 +53,8 @@ void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebu
 }
 
 /**
- * @brief Triangulate a face as a fan and interpolate random vertex intensities.
+ * @brief Triangulate a face as a fan and fill each triangle with a random RGB color.
  * @pre points must describe a convex polygon with at least three vertices.
- * @note Output remains RGB; interpolated intensities appear in the blue channel.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @param[in] points Ordered projected face vertices.
  * @param[in,out] framebuffer Image receiving the filled triangles.
@@ -74,7 +73,7 @@ void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffe
             static_cast<std::uint8_t>(channel(randomEngine)),
             static_cast<std::uint8_t>(channel(randomEngine)),
             255};
-        drawTriangleWithBoundingBox(first.x, first.y, b.x, b.y, c.x, c.y, color.bgra[0], color.bgra[1], color.bgra[2], framebuffer);
+        drawTriangleWithBoundingBox(first.x, first.y, b.x, b.y, c.x, c.y, color, color, color, framebuffer);
     }
 }
 
@@ -216,9 +215,8 @@ int ObjRenderer::renderWireframe(std::string_view objPath, std::string_view outp
 }
 
 /**
- * @brief Render OBJ faces with randomly sampled vertex intensities.
+ * @brief Render OBJ faces as randomly colored filled triangles.
  * @pre Polygonal faces must be convex for fan triangulation.
- * @note Output remains RGB; interpolated intensities appear in the blue channel.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @note No depth testing, lighting, or textures are applied.
  * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
