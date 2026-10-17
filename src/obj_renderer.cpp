@@ -29,17 +29,20 @@ struct ScreenPoint
 {
     int x;
     int y;
+    double z;
 };
 
-using FaceDrawer = void (*)(const std::vector<ScreenPoint>&, TGAImage&);
+using FaceDrawer = void (*)(const std::vector<ScreenPoint>&, TGAImage&, TGAImage&);
 
 /**
  * @brief Draw a closed polygon boundary in white.
  * @pre points must contain at least three vertices.
  * @param[in] points Ordered projected face vertices.
  * @param[in,out] framebuffer Image receiving the face boundary.
+ * @param[in,out] zbuffer Unused depth image; wireframe mode does not write depth.
  */
-void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer)
+void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer,
+                       [[maybe_unused]] TGAImage& zbuffer)
 {
     const ScreenPoint& first = points.front();
     ScreenPoint previous = first;
@@ -58,8 +61,9 @@ void drawWireframeFace(const std::vector<ScreenPoint>& points, TGAImage& framebu
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @param[in] points Ordered projected face vertices.
  * @param[in,out] framebuffer Image receiving the filled triangles.
+ * @param[in,out] zbuffer Grayscale image receiving interpolated depth without visibility testing.
  */
-void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer)
+void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffer, TGAImage& zbuffer)
 {
     static thread_local std::mt19937 randomEngine{std::random_device{}()};
     std::uniform_int_distribution<int> channel(0, 255);
@@ -73,7 +77,8 @@ void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffe
             static_cast<std::uint8_t>(channel(randomEngine)),
             static_cast<std::uint8_t>(channel(randomEngine)),
             255};
-        drawTriangleWithBoundingBox(first.x, first.y, b.x, b.y, c.x, c.y, color, color, color, framebuffer);
+        drawTriangleWithBoundingBox(first.x, first.y, b.x, b.y, c.x, c.y,
+            first.z, b.z, c.z, color, color, color, framebuffer, zbuffer);
     }
 }
 
@@ -85,8 +90,10 @@ void drawFilledFace(const std::vector<ScreenPoint>& points, TGAImage& framebuffe
  * @param[in] objPath Explicit OBJ path or filename looked up under obj/.
  * @param[in] outputPath Destination TGA file path.
  * @param[in] drawFace Callback used to draw each valid projected face.
+ * @param[in] zbufferPath Depth TGA output path; empty disables depth output.
  */
-int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer drawFace)
+int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer drawFace,
+              std::string_view zbufferPath = {})
 {
     std::filesystem::path modelPath{std::string(objPath)};
     if(!modelPath.has_parent_path())
@@ -104,6 +111,8 @@ int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer 
     }
 
     TGAImage framebuffer(framebufferWidth, framebufferHeight, TGAImage::RGB);
+    TGAImage zbuffer = zbufferPath.empty() ? TGAImage{}
+        : TGAImage(framebufferWidth, framebufferHeight, TGAImage::GRAYSCALE);
     std::vector<Vertex> vertices;
     std::size_t faceCount = 0;
 
@@ -179,9 +188,10 @@ int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer 
                     const Vertex& vertex = vertices[index];
                     points.push_back({
                         static_cast<int>((vertex.x + 1.0F) * xScale),
-                        static_cast<int>((vertex.y + 1.0F) * yScale)});
+                        static_cast<int>((vertex.y + 1.0F) * yScale),
+                        (static_cast<double>(vertex.z) + 1.0) * 127.5});
                 }
-                drawFace(points, framebuffer);
+                drawFace(points, framebuffer, zbuffer);
             }
         }
     }
@@ -193,6 +203,12 @@ int renderObj(std::string_view objPath, std::string_view outputPath, FaceDrawer 
     if(!framebuffer.write_tga_file(outputFile))
     {
         std::cerr << "Failed to write " << outputPath << '\n';
+        return 1;
+    }
+
+    if(!zbufferPath.empty() && !zbuffer.write_tga_file(std::string(zbufferPath)))
+    {
+        std::cerr << "Failed to write " << zbufferPath << '\n';
         return 1;
     }
 
@@ -218,13 +234,16 @@ int ObjRenderer::renderWireframe(std::string_view objPath, std::string_view outp
  * @brief Render OBJ faces as randomly colored filled triangles.
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
+ * @note A separate grayscale image maps model z from [-1, 1] to [0, 255].
  * @note No depth testing, lighting, or textures are applied.
  * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
  * @return 0 on success; 1 if the input cannot be opened or output cannot be saved.
  * @param[in] objPath OBJ path or filename resolved under obj/.
  * @param[in] outputPath Destination TGA file path.
+ * @param[in] zbufferPath Destination grayscale depth TGA; empty disables depth output.
  */
-int ObjRenderer::renderFilled(std::string_view objPath, std::string_view outputPath) const
+int ObjRenderer::renderFilled(std::string_view objPath, std::string_view outputPath,
+                              std::string_view zbufferPath) const
 {
-    return renderObj(objPath, outputPath, drawFilledFace);
+    return renderObj(objPath, outputPath, drawFilledFace, zbufferPath);
 }

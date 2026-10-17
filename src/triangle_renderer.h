@@ -70,3 +70,32 @@ void drawTriangleWithMyScanlineV2(
 void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
     const TGAColor& colorA, const TGAColor& colorB, const TGAColor& colorC,
     TGAImage& framebuffer);
+
+/**
+ * @brief Fill a colored triangle and write interpolated depth to a grayscale image.
+ * @pre Integer intermediate values in the area calculation must fit in int.
+ * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note With y increasing upward, only counterclockwise triangles are drawn.
+ * @note Triangle edges are included. B, G, and R channels are interpolated separately.
+ * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
+ * @param[in] ax X coordinate of vertex a.
+ * @param[in] ay Y coordinate of vertex a.
+ * @param[in] bx X coordinate of vertex b.
+ * @param[in] by Y coordinate of vertex b.
+ * @param[in] cx X coordinate of vertex c.
+ * @param[in] cy Y coordinate of vertex c.
+ * @param[in] az Depth at vertex A, mapped to [0, 255].
+ * @param[in] bz Depth at vertex B, mapped to [0, 255].
+ * @param[in] cz Depth at vertex C, mapped to [0, 255].
+ * @param[in,out] framebuffer Image receiving the rendered pixels.
+ * @param[in,out] zbuffer Grayscale image with framebuffer dimensions, or an empty image.
+ * @note Depth is clamped to [0, 255] and written without a visibility test.
+ * @note Later triangles overwrite earlier depth samples where they overlap.
+ * @param[in] colorA Color at vertex A in BGRA order.
+ * @param[in] colorB Color at vertex B in BGRA order.
+ * @param[in] colorC Color at vertex C in BGRA order.
+ */
+void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
+    double az, double bz, double cz,
+    const TGAColor& colorA, const TGAColor& colorB, const TGAColor& colorC,
+    TGAImage& framebuffer, TGAImage& zbuffer);

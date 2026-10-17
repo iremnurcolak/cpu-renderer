@@ -58,7 +58,8 @@ model path. Without a mode flag, filled rendering is used.
 ```
 
 Wireframe output is saved to `obj_wireframe.tga`; filled output is saved to
-`obj_filled.tga`. Mode flags require a model and cannot be combined with
+`obj_filled.tga`. Filled mode also saves an 800 × 800 grayscale depth image
+to `obj_zbuffer.tga`. Mode flags require a model and cannot be combined with
 each other or with `--benchmark`.
 
 A filename without a directory is looked up first as `obj/<filename>`, then as
@@ -103,6 +104,23 @@ Wireframe mode draws face boundaries in white. Filled mode splits polygonal
 faces into a fan of triangles; this requires convex polygonal faces. Triangles
 with signed area below 1 pixel squared are skipped, including clockwise and
 degenerate triangles when y increases upward.
+
+Filled mode interpolates OBJ vertex z values using the same barycentric weights
+as the colors. Model z is mapped from [-1, 1] to [0, 255] and clamped when written:
+larger z values appear brighter, and untouched pixels remain black. This is a
+depth visualization only: no depth comparison is performed, so later faces
+overwrite both color and depth at overlapping pixels. Back-face culling still
+applies. Wireframe mode does not produce a depth image.
+
+The depth output path can be changed through the C++ API:
+
+```cpp
+renderer.renderFilled("diablo3_pose.obj", "obj_filled.tga", "obj_zbuffer.tga");
+```
+
+Pass an empty third argument to disable depth output. The depth image uses
+8-bit RLE grayscale TGA (Type 11), which requires a compatible viewer such as
+[Xarmina TGA Viewer](https://marketplace.visualstudio.com/items?itemName=Xarmina.tga-preview).
 
 ## Triangle rendering
 
