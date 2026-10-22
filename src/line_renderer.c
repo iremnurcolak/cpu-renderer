@@ -1,8 +1,20 @@
 #include "line_renderer.h"
 #include "colors.h"
 
-#include <cmath>
-#include <utility>
+#include <math.h>
+#include <stdlib.h>
+
+/**
+ * @brief Swap two integer coordinates in place.
+ * @param[in,out] a First coordinate.
+ * @param[in,out] b Second coordinate.
+ */
+static void swapInt(int *a, int *b)
+{
+    const int temporary = *a;
+    *a = *b;
+    *b = temporary;
+}
 
 /**
  * @brief Draw a segment using fixed-step floating-point sampling.
@@ -19,14 +31,14 @@ void drawLineBarycentric(
     int ay,
     int bx,
     int by,
-    TGAImage& framebuffer,
+    TGAImage * framebuffer,
     TGAColor color)
 {
     for(float t = 0.0F; t <= 1.0F; t += 0.02F)
     {
-        const int x = std::round(((1.0F - t) * ax) + (t * bx));
-        const int y = std::round(((1.0F - t) * ay) + (t * by));
-        framebuffer.set(x, y, color);
+        const int x = roundf(((1.0F - t) * ax) + (t * bx));
+        const int y = roundf(((1.0F - t) * ay) + (t * by));
+        tgaImageSet(framebuffer, x, y, color);
     }
 }
 
@@ -46,26 +58,26 @@ void drawLineInterpolated(
     int ay,
     int bx,
     int by,
-    TGAImage& framebuffer,
+    TGAImage * framebuffer,
     TGAColor color)
 {
     if(ax == bx && ay == by)
     {
-        framebuffer.set(ax, ay, color);
+        tgaImageSet(framebuffer, ax, ay, color);
         return;
     }
 
-    const bool isSteep = std::abs(ax - bx) < std::abs(ay - by);
+    const bool isSteep = abs(ax - bx) < abs(ay - by);
 
     if(isSteep)
     {
-        std::swap(ax, ay);
-        std::swap(bx, by);
+        swapInt(&ax, &ay);
+        swapInt(&bx, &by);
     }
     if(ax > bx)
     {
-        std::swap(ax, bx);
-        std::swap(ay, by);
+        swapInt(&ax, &bx);
+        swapInt(&ay, &by);
     }
 
     int y = ay;
@@ -74,13 +86,13 @@ void drawLineInterpolated(
     {
         if(isSteep)
         {
-            framebuffer.set(y, x, color);
+            tgaImageSet(framebuffer, y, x, color);
         }
         else
         {
-            framebuffer.set(x, y, color);
+            tgaImageSet(framebuffer, x, y, color);
         }
-        ierror += 2 * std::abs(by - ay);
+        ierror += 2 * abs(by - ay);
 
         // Convert the threshold comparison to 0 or 1 to avoid an explicit branch.
         y += (by > ay ? 1 : -1) * (ierror > bx - ax);

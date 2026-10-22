@@ -1,7 +1,7 @@
-# Benchmark Results
+# Historical C++ Benchmark Results
 
-The benchmark runs `drawLineInterpolated` for 16 million random lines on a
-64 × 64 framebuffer. Coordinate and color generation are included in the
+These measurements describe the pre-migration C++ benchmark, which ran
+`drawLineInterpolated` for 16 million random lines on a 64 × 64 framebuffer. Coordinate and color generation are included in the
 measured time; writing the TGA file to disk is excluded.
 
 | Date | Method | Runs (s) | Median (s) |
@@ -16,7 +16,10 @@ The latest measurements were taken on Windows in a Release configuration using
 the Visual Studio 17 2022 CMake generator. Results may vary with system load and
 hardware, so comparisons use the median value.
 
-## Running the benchmark
+The current C17 benchmark uses `rand()` and CPU time, and renders at 128 × 128.
+Its timings and random sequence differ from these historical results.
+
+## Running the current C benchmark
 
 ```powershell
 cmake -S . -B build

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef LINE_RENDERER_H
+#define LINE_RENDERER_H
 
 #include "tgaimage.h"
 
@@ -17,7 +18,7 @@ void drawLineBarycentric(
     int ay,
     int bx,
     int by,
-    TGAImage& framebuffer,
+    TGAImage * framebuffer,
     TGAColor color);
 
 /**
@@ -36,5 +37,7 @@ void drawLineInterpolated(
     int ay,
     int bx,
     int by,
-    TGAImage& framebuffer,
+    TGAImage * framebuffer,
     TGAColor color);
+
+#endif
