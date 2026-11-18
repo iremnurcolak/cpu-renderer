@@ -89,7 +89,7 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
  * @param[in,out] framebuffer Image receiving the rendered pixels.
  * @param[in,out] zbuffer Grayscale image matching the framebuffer, or NULL to disable depth.
  * @note Depth retains the largest quantized value, initialized to zero.
- * @note Colors are still written before the depth check, matching the previous renderer.
+ * @note Depth testing precedes color interpolation and pixel writes; larger z is nearer.
  * @param[in] colorA Color at vertex A in BGRA order.
  * @param[in] colorB Color at vertex B in BGRA order.
  * @param[in] colorC Color at vertex C in BGRA order.

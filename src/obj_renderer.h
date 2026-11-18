@@ -19,7 +19,7 @@ int renderObjWireframe(const char *objPath, const char *outputPath);
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @note Model x/y coordinates map from [-1, 1]; z maps to grayscale [0, 255].
- * @note Depth retains the largest value, but colors are written before the depth check.
+ * @note Only pixels with a larger depth update both the color and depth images.
  * @note No lighting or textures are applied.
  */
 int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath);

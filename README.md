@@ -22,6 +22,10 @@ cmake --build build
 The executable writes `framebuffer.tga` to its working directory. Without
 arguments it draws three RGB-interpolated triangles on a 128 × 128 framebuffer.
 Generated images and build directories are ignored by Git.
+Each successfully saved image is reported in the terminal as `Saved image: <path>`.
+
+Use `./build/cpu_renderer --help` (or `-h`) to list usage, mode flags, model
+lookup rules, output filenames, and examples. Help exits without rendering.
 
 The existing `build/` directory can be reconfigured with these commands after
 the C migration. Reconfigure `build-release/` before using it as well.
@@ -152,10 +156,11 @@ output. Return values are 0 on success and 1 on input, allocation, or output fai
 
 Depth values are interpolated from OBJ z coordinates mapped from [-1, 1] to
 [0, 255] and clamped before writing an 8-bit grayscale image. Larger values are
-brighter; untouched pixels remain black. The current implementation preserves
-the pre-migration ordering: the depth image retains the largest quantized z,
-but the color is written **before** the depth comparison. Thus color visibility
-still depends on face drawing order; this is not yet full hidden-surface removal.
+brighter; untouched pixels remain black. With a depth image enabled, pixels are
+drawn only if their quantized z is greater than the stored value. This comparison
+runs before color interpolation and updates both color and depth for visible
+pixels. Equal-depth samples retain the first drawn pixel; with depth output
+disabled, faces are drawn in input order.
 
 ## Viewing output and debugging
 

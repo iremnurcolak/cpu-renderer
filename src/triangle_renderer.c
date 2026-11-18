@@ -253,7 +253,7 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
  * @param[in,out] framebuffer Image receiving the rendered pixels.
  * @param[in,out] zbuffer Grayscale image matching the framebuffer, or NULL to disable depth.
  * @note Depth retains the largest quantized value, initialized to zero.
- * @note Colors are still written before the depth check, matching the previous renderer.
+ * @note Depth testing precedes color interpolation and pixel writes; larger z is nearer.
  * @param[in] colorA Color at vertex A in BGRA order.
  * @param[in] colorB Color at vertex B in BGRA order.
  * @param[in] colorC Color at vertex C in BGRA order.
@@ -294,7 +294,14 @@ void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, in
                 continue;
                 //the vertex is not inside the triangle
             }
-            
+
+            if(zbuffer && zbuffer->data)
+            {
+                const uint8_t z = (uint8_t)clampDouble(alpha * az + beta * bz + gamma * cz, 0.0, 255.0);
+                if (z <= tgaImageGet(zbuffer, x, y).bgra[0]) continue;
+                tgaImageSet(zbuffer, x, y, (TGAColor){{z, 0, 0, 0}});
+            }
+
             TGAColor color = {{0}};
             for(int channel = 0; channel < 3; ++channel)
             {
@@ -304,13 +311,8 @@ void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, in
                 color.bgra[channel] = (uint8_t)clampDouble(value, 0.0, 255.0);
             }
             color.bgra[3] = 255;
+
             tgaImageSet(framebuffer, x, y, color);
-            if(zbuffer && zbuffer->data)
-            {
-                const uint8_t z = (uint8_t)clampDouble(alpha * az + beta * bz + gamma * cz, 0.0, 255.0);
-                if (z <= tgaImageGet(zbuffer, x, y).bgra[0]) continue;
-                tgaImageSet(zbuffer, x, y, (TGAColor){{z, 0, 0, 0}});
-            }
         }
     }
 }

@@ -154,7 +154,7 @@ static void drawWireframeFace(const ScreenPoint *points, size_t count,
  * @param[in] count Number of points, at least three.
  * @param[in,out] framebuffer Destination RGB image.
  * @param[in,out] zbuffer Optional grayscale depth image, or NULL.
- * @note Colors are written before depth comparisons, preserving the previous renderer.
+ * @note Pixels failing the depth comparison are skipped before color interpolation.
  */
 static void drawFilledFace(const ScreenPoint *points, size_t count,
     TGAImage *framebuffer, TGAImage *zbuffer)
@@ -302,10 +302,15 @@ static int renderObj(const char *objPath, const char *outputPath,
         fprintf(stderr, "Failed to write %s\n", outputPath);
         goto cleanup;
     }
-    if(depthEnabled && !tgaImageWrite(&zbuffer, zbufferPath, true, true))
+    printf("Saved image: %s\n", outputPath);
+    if(depthEnabled)
     {
-        fprintf(stderr, "Failed to write %s\n", zbufferPath);
-        goto cleanup;
+        if(!tgaImageWrite(&zbuffer, zbufferPath, true, true))
+        {
+            fprintf(stderr, "Failed to write %s\n", zbufferPath);
+            goto cleanup;
+        }
+        printf("Saved image: %s\n", zbufferPath);
     }
     result = 0;
 cleanup:
@@ -342,7 +347,7 @@ int renderObjWireframe(const char *objPath, const char *outputPath)
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @note Model x/y coordinates map from [-1, 1]; z maps to grayscale [0, 255].
- * @note Depth retains the largest value, but colors are written before the depth check.
+ * @note Only pixels with a larger depth update both the color and depth images.
  * @note No lighting or textures are applied.
  */
 int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath)
