@@ -8,6 +8,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(renderer
     src/colors.c
+    src/vec.c
     src/line_renderer.c
     src/triangle_renderer.c
     src/obj_renderer.c
