@@ -115,18 +115,66 @@ Place models under `obj/` and run from the project root:
 
 ```bash
 ./build/cpu_renderer diablo3_pose.obj
-./build/cpu_renderer --wireframe diablo3_pose.obj
-./build/cpu_renderer --filled obj/african_head/african_head.obj
+./build/cpu_renderer --wireframe --orthographic diablo3_pose.obj
+./build/cpu_renderer --filled --perspective obj/african_head/african_head.obj
 ./build/cpu_renderer obj/boggie/head.obj --filled
 ```
 
-The mode flag can precede or follow the model path; filled rendering is the default.
-Modes cannot be combined with each other or with `--benchmark`.
+Drawing-mode and projection flags can precede or follow the model path.
+Filled rendering with perspective is the default. Use one flag from each group:
 
-| Mode | Color output | Depth output |
-|---|---|---|
-| `--wireframe` | `obj_wireframe.tga` | None |
-| `--filled` | `obj_filled.tga` | `obj_zbuffer.tga` |
+- `--wireframe` or `--filled`: Draw face boundaries or filled triangles.
+- `--orthographic`: Rotate, then apply only viewport mapping with `vec3Project`.
+- `--perspective`: Rotate, apply `vec3Perspective`, then map to the viewport.
+
+Conflicting flags within either group are rejected. Projection and drawing-mode
+flags require a model and cannot be combined with `--benchmark`. `--help` lists
+all options and exits without producing images. These are executable arguments,
+so no rebuild is needed when switching projection modes.
+
+| Drawing mode | Projection | Color output | Depth output |
+|---|---|---|---|
+| `--wireframe` | `--orthographic` | `obj_wireframe_orthographic.tga` | None |
+| `--wireframe` | `--perspective` | `obj_wireframe_perspective.tga` | None |
+| `--filled` | `--orthographic` | `obj_filled_orthographic.tga` | `obj_zbuffer_orthographic.tga` |
+| `--filled` | `--perspective` | `obj_filled_perspective.tga` | `obj_zbuffer_perspective.tga` |
+
+Different projections have distinct output names, so both results can be kept.
+
+### Orthographic and perspective comparison
+
+These depth images were rendered from `obj/african_head/african_head.obj` at
+800 × 800 with the same 30-degree Y rotation. They use the original viewport
+without cropping or resizing, so the silhouettes can be compared directly.
+
+| Orthographic | Perspective |
+|---|---|
+| ![African head orthographic depth image](docs/images/african-head-orthographic-depth.png) | ![African head perspective depth image](docs/images/african-head-perspective-depth.png) |
+
+Orthographic projection maps x and y to the screen independently of depth:
+an object's apparent size stays the same as it moves closer or farther away.
+Perspective first divides the rotated coordinates by `1 - z / 3`, then applies
+the same viewport mapping. Parts closer to the camera appear larger, while
+farther parts appear smaller. Compare the nose, face outline, and neck in the
+images above.
+
+Brightness represents depth, not lighting: brighter pixels are closer to the
+camera, and untouched pixels are black. This renderer also divides z during
+the perspective step, so brightness changes between the two modes as well as
+the projected shape. Both images use the same 8-bit depth mapping.
+
+Generate the source TGA images with:
+
+```bash
+./build/cpu_renderer --filled --orthographic obj/african_head/african_head.obj
+./build/cpu_renderer --filled --perspective obj/african_head/african_head.obj
+```
+
+The depth outputs are `obj_zbuffer_orthographic.tga` and
+`obj_zbuffer_perspective.tga`. The README uses PNG copies of these grayscale
+images for browser compatibility; random triangle colors do not affect them.
+
+### Model loading and rendering API
 
 A bare filename is searched first as `obj/<filename>`, then as
 `obj/<stem>/<filename>`. For example, `diablo3_pose.obj` resolves to
@@ -135,32 +183,50 @@ when a folder has a different name, such as `obj/boggie/head.obj`.
 Relative paths are resolved from the terminal's working directory.
 
 The shared OBJ reader handles vertex positions (`v`), slash-separated and
-negative face indices, and polygonal faces. It projects x/y coordinates from
-[-1, 1] to an 800 × 800 framebuffer without automatically fitting the model.
-Wireframe mode draws white face boundaries. Filled mode splits convex faces
-into triangle fans and assigns a random color to each triangle. Lighting,
-textures, and perspective projection are not applied.
+negative face indices, and polygonal faces. In both OBJ modes, each 3D vertex
+passes through `vec3RotateY` (30 degrees), optionally `vec3Perspective`
+(camera distance 3), and `vec3Project`, in that order. Orthographic mode skips
+the perspective division.
+The final mapping sends x/y from [-1, 1] to an 800 × 800 framebuffer without
+automatically fitting the model. Wireframe mode draws white face boundaries.
+Filled mode splits convex faces into triangle fans and assigns a random color
+to each triangle. Lighting and textures are not applied.
 
 The public C functions replace the `ObjRenderer` class:
 
 ```c
 #include "obj_renderer.h"
 
-renderObjWireframe("diablo3_pose.obj", "obj_wireframe.tga");
-renderObjFilled("diablo3_pose.obj", "obj_filled.tga", "obj_zbuffer.tga");
+renderObjWireframe("diablo3_pose.obj", NULL, OBJ_PROJECTION_ORTHOGRAPHIC);
+renderObjFilled("diablo3_pose.obj", NULL, NULL, OBJ_PROJECTION_PERSPECTIVE);
 ```
 
-A NULL output path selects the corresponding default filename. For
+The final `ObjProjection` argument selects the projection for both drawing modes.
+A NULL output path selects the corresponding filename with the projection suffix. For
 `renderObjFilled`, NULL selects the default depth filename; `""` disables depth
 output. Return values are 0 on success and 1 on input, allocation, or output failure.
 
-Depth values are interpolated from OBJ z coordinates mapped from [-1, 1] to
-[0, 255] and clamped before writing an 8-bit grayscale image. Larger values are
+Depth values are interpolated from the transformed z coordinates (after the
+perspective divide when enabled), mapped from [-1, 1] to [0, 255] and clamped before writing an 8-bit grayscale image. Larger values are
 brighter; untouched pixels remain black. With a depth image enabled, pixels are
 drawn only if their quantized z is greater than the stored value. This comparison
 runs before color interpolation and updates both color and depth for visible
 pixels. Equal-depth samples retain the first drawn pixel; with depth output
 disabled, faces are drawn in input order.
+
+The transformations can also be used independently:
+
+```c
+Vec3 rotated = vec3RotateY(vertex, 30.0);
+Vec3 perspective = vec3Perspective(rotated, 3.0);
+ProjectedVertex projected = vec3Project(perspective, width, height);
+```
+
+`vec3Project` applies only the viewport mapping; it does not repeat the
+perspective divide. As in the tutorial, the positive x/y boundary maps to
+width/height. Out-of-bounds pixel writes are ignored. Faces with a vertex on or
+behind the camera are skipped in perspective mode; near-plane clipping is not
+implemented. Orthographic mode does not apply the perspective camera-plane test.
 
 ## Viewing output and debugging
 

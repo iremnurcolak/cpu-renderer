@@ -26,6 +26,17 @@ typedef struct
 } Vec4;
 
 /**
+ * @brief Integer screen coordinates and mapped depth of a projected 3D vertex.
+ * @note x and y are framebuffer coordinates; z represents grayscale depth.
+ */
+typedef struct
+{
+    int x;
+    int y;
+    int z;
+} ProjectedVertex;
+
+/**
  * @brief Add two vectors component by component without modifying either input.
  * @param[in] a First vector.
  * @param[in] b Second vector.
@@ -125,6 +136,38 @@ Vec3 vec3Normalize(Vec3 v);
  * @note Reversing the input order negates the result. The result is not normalized.
  */
 Vec3 vec3Cross(Vec3 a, Vec3 b);
+
+/**
+ * @brief Rotate a vector about the Y axis through the origin.
+ * @param[in] v Vector to rotate without modifying it.
+ * @param[in] angleDegrees Rotation angle in degrees, following the right-hand rule.
+ * @return The rotated vector, with its length preserved.
+ * @note Degrees are converted to radians internally; use 30 for the tutorial rotation.
+ */
+Vec3 vec3RotateY(Vec3 v, double angleDegrees);
+
+/**
+ * @brief Apply the tutorial's perspective division to a 3D vertex.
+ * @param[in] v Vertex after model rotation, before viewport mapping.
+ * @param[in] cameraDistance Positive camera position on the Z axis; use 3 for the tutorial.
+ * @pre v.z must be less than cameraDistance; vertices on or behind the camera are invalid.
+ * @return v / (1 - v.z / cameraDistance), including the transformed z component.
+ * @note This operation does not perform clipping or convert coordinates to pixels.
+ */
+Vec3 vec3Perspective(Vec3 v, double cameraDistance);
+
+/**
+ * @brief Map a transformed 3D vertex to integer screen coordinates and depth.
+ * @param[in] v Vertex after rotation and optional perspective division.
+ * @param[in] width Positive framebuffer width.
+ * @param[in] height Positive framebuffer height.
+ * @return Integer coordinates ((v.x + 1) * width / 2,
+ *         (v.y + 1) * height / 2, (v.z + 1) * 255 / 2), truncated toward zero.
+ * @pre Mapped x, y, and z must be finite and representable as int.
+ * @note No perspective division or clamping is performed, matching the tutorial.
+ * @note The positive viewport boundary maps to width/height, outside valid pixel indices.
+ */
+ProjectedVertex vec3Project(Vec3 v, int width, int height);
 
 /**
  * @brief Add two vectors component by component without modifying either input.

@@ -1,5 +1,59 @@
 #include "vec.h"
+#include "mat.h"
 #include <math.h>
+
+/**
+ * @brief Map a transformed 3D vertex to integer screen coordinates and depth.
+ * @param[in] v Vertex after rotation and optional perspective division.
+ * @param[in] width Positive framebuffer width.
+ * @param[in] height Positive framebuffer height.
+ * @return Integer coordinates ((v.x + 1) * width / 2,
+ *         (v.y + 1) * height / 2, (v.z + 1) * 255 / 2), truncated toward zero.
+ * @pre Mapped x, y, and z must be finite and representable as int.
+ * @note No perspective division or clamping is performed, matching the tutorial.
+ * @note The positive viewport boundary maps to width/height, outside valid pixel indices.
+ */
+ProjectedVertex vec3Project(Vec3 v, int width, int height)
+{
+    const ProjectedVertex projected = {
+        (int)((v.x + 1.0) * width / 2.0),
+        (int)((v.y + 1.0) * height / 2.0),
+        (int)((v.z + 1.0) * 255.0 / 2.0)
+    };
+    return projected;
+}
+
+/**
+ * @brief Apply the tutorial's perspective division to a 3D vertex.
+ * @param[in] v Vertex after model rotation, before viewport mapping.
+ * @param[in] cameraDistance Positive camera position on the Z axis; use 3 for the tutorial.
+ * @pre v.z must be less than cameraDistance; vertices on or behind the camera are invalid.
+ * @return v / (1 - v.z / cameraDistance), including the transformed z component.
+ * @note This operation does not perform clipping or convert coordinates to pixels.
+ */
+Vec3 vec3Perspective(Vec3 v, double cameraDistance)
+{
+    const double denominator = 1.0 - v.z / cameraDistance;
+    return vec3Scale(v, 1.0 / denominator);
+}
+
+/**
+ * @brief Rotate a vector about the Y axis through the origin.
+ * @param[in] v Vector to rotate without modifying it.
+ * @param[in] angleDegrees Rotation angle in degrees, following the right-hand rule.
+ * @return The rotated vector, with its length preserved.
+ * @note Degrees are converted to radians internally; use 30 for the tutorial rotation.
+ */
+Vec3 vec3RotateY(Vec3 v, double angleDegrees)
+{
+    const double angleRadians = angleDegrees * (acos(-1.0) / 180.0);
+    const double cosine = cos(angleRadians);
+    const double sine = sin(angleRadians);
+    const Mat3 rotation = {{{cosine, 0.0, sine},
+                            {0.0, 1.0, 0.0},
+                            {-sine, 0.0, cosine}}};
+    return mat3MultiplyVec3(rotation, v);
+}
 
 /**
  * @brief Add two vectors component by component without modifying either input.

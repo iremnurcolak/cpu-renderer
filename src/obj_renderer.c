@@ -2,6 +2,7 @@
 #include "colors.h"
 #include "line_renderer.h"
 #include "triangle_renderer.h"
+#include "vec.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -14,6 +15,7 @@
 
 static const int framebufferWidth = 800;
 static const int framebufferHeight = 800;
+static const double cameraDistance = 3.0;
 
 typedef struct Vertex { float x, y, z; } Vertex;
 typedef struct ScreenPoint { int x, y; double z; } ScreenPoint;
@@ -171,16 +173,20 @@ static void drawFilledFace(const ScreenPoint *points, size_t count,
 }
 
 /**
- * @brief Resolve face indices and project vertices into a reusable point buffer.
+ * @brief Resolve face indices, rotate vertices, and apply the selected projection.
  * @param[in] text Face tokens following the f record tag.
  * @param[in] vertices Vertices already read from the OBJ stream.
  * @param[in] vertexCount Number of available vertices.
+ * @param[in] rotationDegrees Y-axis rotation applied to 3D vertices before projection.
+ * @param[in] projection Orthographic or perspective-plus-viewport projection.
  * @param[in,out] points Owned projected-point buffer, initially NULL.
  * @param[in,out] capacity Point buffer capacity.
  * @param[out] count Number of projected vertices; zero for an invalid face.
  * @return false only for allocation failure; invalid faces are skipped.
+ * @note Perspective faces on or behind the camera are skipped; near-plane clipping is not implemented.
  */
 static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCount,
+    double rotationDegrees, ObjProjection projection,
     ScreenPoint **points, size_t *capacity, size_t *count)
 {
     *count = 0;
@@ -210,19 +216,31 @@ static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCou
                 goto invalid;
             resolved = vertexCount - (size_t)distance;
         }
-        const Vertex vertex = vertices[resolved];
-        const float xScale = (framebufferWidth - 1) * 0.5F;
-        const float yScale = (framebufferHeight - 1) * 0.5F;
-        const double x = (vertex.x + 1.0F) * xScale;
-        const double y = (vertex.y + 1.0F) * yScale;
-        if(!isfinite(x) || !isfinite(y) || !isfinite(vertex.z)
-            || x < INT_MIN || x >= INT_MAX || y < INT_MIN || y >= INT_MAX)
+        const Vertex source = vertices[resolved];
+        Vec3 vertex = vec3RotateY((Vec3){source.x, source.y, source.z}, rotationDegrees);
+        if(!isfinite(vertex.x) || !isfinite(vertex.y) || !isfinite(vertex.z))
             goto invalid;
+        if(projection == OBJ_PROJECTION_PERSPECTIVE)
+        {
+            if(vertex.z >= cameraDistance)
+                goto invalid;
+            vertex = vec3Perspective(vertex, cameraDistance);
+        }
+
+        /* Validate the viewport values before vec3Project converts them to int. */
+        const double x = (vertex.x + 1.0) * framebufferWidth / 2.0;
+        const double y = (vertex.y + 1.0) * framebufferHeight / 2.0;
+        const double z = (vertex.z + 1.0) * 255.0 / 2.0;
+        if(!isfinite(x) || !isfinite(y) || !isfinite(z)
+            || x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX
+            || z < INT_MIN || z > INT_MAX)
+            goto invalid;
+        const ProjectedVertex projected = vec3Project(vertex, framebufferWidth, framebufferHeight);
         ScreenPoint *grown = growArray(*points, capacity, *count + 1, sizeof(**points));
         if(!grown)
             return false;
         *points = grown;
-        (*points)[(*count)++] = (ScreenPoint){(int)x, (int)y, ((double)vertex.z + 1.0) * 127.5};
+        (*points)[(*count)++] = (ScreenPoint){projected.x, projected.y, projected.z};
         text = end;
         while(*text && !isspace((unsigned char)*text))
             ++text;
@@ -239,12 +257,14 @@ invalid:
  * @param[in] outputPath Color TGA destination.
  * @param[in] drawFace Face drawing callback.
  * @param[in] zbufferPath Depth TGA destination; NULL or empty disables depth output.
+ * @param[in] projection Selected projection for all face vertices.
  * @return 0 on success or 1 for input, allocation, or output failure.
  */
 static int renderObj(const char *objPath, const char *outputPath,
-    FaceDrawer drawFace, const char *zbufferPath)
+    FaceDrawer drawFace, const char *zbufferPath, ObjProjection projection)
 {
-    if(!objPath || !*objPath || !outputPath)
+    if(!objPath || !*objPath || !outputPath
+        || (projection != OBJ_PROJECTION_ORTHOGRAPHIC && projection != OBJ_PROJECTION_PERSPECTIVE))
         return 1;
     char *modelPath = resolveModelPath(objPath);
     if(!modelPath)
@@ -263,6 +283,7 @@ static int renderObj(const char *objPath, const char *outputPath,
     char *line = NULL;
     size_t vertexCount = 0, vertexCapacity = 0, pointCapacity = 0, lineCapacity = 0, faceCount = 0;
     const bool depthEnabled = zbufferPath && *zbufferPath;
+    const double rotationDegrees = 30.0;
     int result = 1;
     if(!tgaImageInit(&framebuffer, framebufferWidth, framebufferHeight, TGA_RGB)
         || (depthEnabled && !tgaImageInit(&zbuffer, framebufferWidth, framebufferHeight, TGA_GRAYSCALE)))
@@ -285,7 +306,8 @@ static int renderObj(const char *objPath, const char *outputPath,
         else if(line[0] == 'f' && isspace((unsigned char)line[1]))
         {
             size_t count;
-            if(!parseFace(line + 1, vertices, vertexCount, &points, &pointCapacity, &count))
+            if(!parseFace(line + 1, vertices, vertexCount, rotationDegrees, projection,
+                &points, &pointCapacity, &count))
                 goto cleanup;
             if(count >= 3)
             {
@@ -329,29 +351,40 @@ cleanup:
 /**
  * @brief Render OBJ face boundaries as white line segments into an 800 x 800 TGA.
  * @param[in] objPath OBJ path or filename resolved under obj/.
- * @param[in] outputPath Destination TGA path; NULL uses obj_wireframe.tga.
+ * @param[in] outputPath Destination TGA path; NULL uses obj_wireframe_<projection>.tga.
+ * @param[in] projection Orthographic or perspective-plus-viewport projection.
  * @return 0 on success; 1 for invalid arguments, allocation failures, or file errors.
- * @note Model x/y coordinates map from [-1, 1] without automatic fitting.
+ * @note Transformed x/y map from [-1, 1] without automatic fitting.
+ * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
  */
-int renderObjWireframe(const char *objPath, const char *outputPath)
+int renderObjWireframe(const char *objPath, const char *outputPath, ObjProjection projection)
 {
-    return renderObj(objPath, outputPath ? outputPath : "obj_wireframe.tga", drawWireframeFace, NULL);
+    const char *defaultPath = projection == OBJ_PROJECTION_ORTHOGRAPHIC
+        ? "obj_wireframe_orthographic.tga" : "obj_wireframe_perspective.tga";
+    return renderObj(objPath, outputPath ? outputPath : defaultPath, drawWireframeFace, NULL, projection);
 }
 
 /**
  * @brief Render OBJ faces as randomly colored filled triangles and optional depth output.
  * @param[in] objPath OBJ path or filename resolved under obj/.
- * @param[in] outputPath Destination TGA path; NULL uses obj_filled.tga.
- * @param[in] zbufferPath Depth TGA path; NULL uses obj_zbuffer.tga; "" disables depth.
+ * @param[in] outputPath Destination TGA path; NULL uses obj_filled_<projection>.tga.
+ * @param[in] zbufferPath Depth TGA path; NULL uses obj_zbuffer_<projection>.tga; "" disables depth.
+ * @param[in] projection Orthographic or perspective-plus-viewport projection.
  * @return 0 on success; 1 for invalid arguments, allocation failures, or file errors.
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
- * @note Model x/y coordinates map from [-1, 1]; z maps to grayscale [0, 255].
+ * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
+ * @note Transformed x/y map to the viewport and z maps to grayscale depth.
  * @note Only pixels with a larger depth update both the color and depth images.
  * @note No lighting or textures are applied.
  */
-int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath)
+int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath,
+    ObjProjection projection)
 {
-    return renderObj(objPath, outputPath ? outputPath : "obj_filled.tga", drawFilledFace,
-        zbufferPath ? zbufferPath : "obj_zbuffer.tga");
+    const char *defaultColor = projection == OBJ_PROJECTION_ORTHOGRAPHIC
+        ? "obj_filled_orthographic.tga" : "obj_filled_perspective.tga";
+    const char *defaultDepth = projection == OBJ_PROJECTION_ORTHOGRAPHIC
+        ? "obj_zbuffer_orthographic.tga" : "obj_zbuffer_perspective.tga";
+    return renderObj(objPath, outputPath ? outputPath : defaultColor, drawFilledFace,
+        zbufferPath ? zbufferPath : defaultDepth, projection);
 }

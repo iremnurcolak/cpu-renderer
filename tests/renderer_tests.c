@@ -2,7 +2,9 @@
 #include "line_renderer.h"
 #include "obj_renderer.h"
 #include "triangle_renderer.h"
+#include "vec.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,21 +149,93 @@ static void testObj(void)
     const char *model = "v -0.5 -0.5 -1\nv 0.5 -0.5 0\nv 0.5 0.5 1\nv -0.5 0.5 0\n"
         "f -4/1/1 -3/2/1 -2/3/1 -1/4/1\nf 0 2 3\nf 999999999999999999999999 2 3\n";
     CHECK(fputs(model, file) >= 0 && fclose(file) == 0);
-    CHECK(renderObjWireframe("./mesh.obj", "wire.tga") == 0);
-    CHECK(renderObjFilled("./mesh.obj", "filled.tga", "depth.tga") == 0);
+    CHECK(renderObjWireframe("./mesh.obj", "wire.tga", OBJ_PROJECTION_PERSPECTIVE) == 0);
+    CHECK(renderObjFilled("./mesh.obj", "filled.tga", "depth.tga", OBJ_PROJECTION_PERSPECTIVE) == 0);
     TGAImage wire = {0}, filled = {0}, depth = {0};
     CHECK(tgaImageRead(&wire, "wire.tga"));
     CHECK(tgaImageRead(&filled, "filled.tga"));
     CHECK(tgaImageRead(&depth, "depth.tga"));
     CHECK(wire.width == 800 && depth.bytesPerPixel == 1 && filled.bytesPerPixel == 3);
     CHECK(wire.data != NULL && tgaImageGet(&wire, 400, 400).bgra[0] == 0);
+    /* The first vertex maps to (90, 234) after rotation and perspective division.
+       Reading the bottom-origin TGA reverses its row to 800 - 1 - 234. */
+    CHECK(sameColor(tgaImageGet(&wire, 90, 565), white, 3));
+    CHECK(renderObjWireframe("./mesh.obj", "wire-orthographic.tga", OBJ_PROJECTION_ORTHOGRAPHIC) == 0);
+    TGAImage orthographic = {0};
+    CHECK(tgaImageRead(&orthographic, "wire-orthographic.tga"));
+    /* Without perspective, the rotated vertex maps to (26, 200). */
+    CHECK(sameColor(tgaImageGet(&orthographic, 26, 599), white, 3));
+    CHECK(memcmp(wire.data, orthographic.data, 800 * 800 * 3) != 0);
+    tgaImageDestroy(&orthographic);
+    CHECK(renderObjFilled("./mesh.obj", NULL, NULL, OBJ_PROJECTION_ORTHOGRAPHIC) == 0);
+    TGAImage orthographicDepth = {0};
+    CHECK(tgaImageRead(&orthographicDepth, "obj_zbuffer_orthographic.tga"));
+    CHECK(orthographicDepth.bytesPerPixel == 1);
+    CHECK(tgaImageGet(&orthographicDepth, 400, 400).bgra[0] > 0);
+    tgaImageDestroy(&orthographicDepth);
     CHECK(tgaImageGet(&depth, 400, 400).bgra[0] > 0);
-    CHECK(renderObjFilled("./mesh.obj", "without-depth.tga", "") == 0);
-    CHECK(renderObjWireframe("./does-not-exist.obj", "unused.tga") == 1);
-    CHECK(renderObjFilled("./mesh.obj", "missing-directory/out.tga", "") == 1);
+    CHECK(renderObjFilled("./mesh.obj", "without-depth.tga", "", OBJ_PROJECTION_PERSPECTIVE) == 0);
+    CHECK(renderObjWireframe("./does-not-exist.obj", "unused.tga", OBJ_PROJECTION_PERSPECTIVE) == 1);
+    CHECK(renderObjFilled("./mesh.obj", "missing-directory/out.tga", "", OBJ_PROJECTION_PERSPECTIVE) == 1);
     tgaImageDestroy(&wire);
     tgaImageDestroy(&filled);
     tgaImageDestroy(&depth);
+}
+
+/** @brief Check Y rotation orientation, invariant length/axis, and inverse rotation. */
+static void testRotation(void)
+{
+    const double epsilon = 1e-12;
+    const Vec3 v = {1.0, 2.0, 3.0};
+    const Vec3 unchanged = vec3RotateY(v, 0.0);
+    CHECK(fabs(unchanged.x - v.x) < epsilon);
+    CHECK(fabs(unchanged.y - v.y) < epsilon);
+    CHECK(fabs(unchanged.z - v.z) < epsilon);
+
+    const Vec3 rotated = vec3RotateY(v, 30.0);
+    CHECK(fabs(rotated.y - v.y) < epsilon);
+    CHECK(fabs(vec3Length(rotated) - vec3Length(v)) < epsilon);
+    const Vec3 restored = vec3RotateY(rotated, -30.0);
+    CHECK(fabs(restored.x - v.x) < epsilon);
+    CHECK(fabs(restored.y - v.y) < epsilon);
+    CHECK(fabs(restored.z - v.z) < epsilon);
+
+    const Vec3 quarterTurn = vec3RotateY((Vec3){1.0, 0.0, 0.0}, 90.0);
+    CHECK(fabs(quarterTurn.x) < epsilon);
+    CHECK(fabs(quarterTurn.y) < epsilon);
+    CHECK(fabs(quarterTurn.z + 1.0) < epsilon);
+}
+
+/** @brief Check the projection plane and the apparent size of nearer/farther vertices. */
+static void testPerspective(void)
+{
+    const double epsilon = 1e-12;
+    const Vec3 onPlane = vec3Perspective((Vec3){1.0, -2.0, 0.0}, 3.0);
+    CHECK(fabs(onPlane.x - 1.0) < epsilon);
+    CHECK(fabs(onPlane.y + 2.0) < epsilon);
+    CHECK(fabs(onPlane.z) < epsilon);
+
+    const Vec3 nearVertex = vec3Perspective((Vec3){1.0, 2.0, 1.0}, 3.0);
+    CHECK(fabs(nearVertex.x - 1.5) < epsilon);
+    CHECK(fabs(nearVertex.y - 3.0) < epsilon);
+    CHECK(fabs(nearVertex.z - 1.5) < epsilon);
+    const Vec3 farVertex = vec3Perspective((Vec3){1.0, 2.0, -1.0}, 3.0);
+    CHECK(fabs(farVertex.x - 0.75) < epsilon);
+    CHECK(fabs(farVertex.y - 1.5) < epsilon);
+    CHECK(fabs(farVertex.z + 0.75) < epsilon);
+}
+
+/** @brief Check viewport center, independent dimensions, depth, and tutorial boundaries. */
+static void testViewportProjection(void)
+{
+    const ProjectedVertex center = vec3Project((Vec3){0, 0, 0}, 800, 600);
+    CHECK(center.x == 400 && center.y == 300 && center.z == 127);
+    const ProjectedVertex lower = vec3Project((Vec3){-1, -1, -1}, 800, 600);
+    CHECK(lower.x == 0 && lower.y == 0 && lower.z == 0);
+    const ProjectedVertex upper = vec3Project((Vec3){1, 1, 1}, 800, 600);
+    CHECK(upper.x == 800 && upper.y == 600 && upper.z == 255);
+    const ProjectedVertex outside = vec3Project((Vec3){-1.5, 0.5, 0}, 800, 600);
+    CHECK(outside.x == -200 && outside.y == 450 && outside.z == 127);
 }
 
 /** @brief Run C API regression tests and report success. */
@@ -171,6 +245,9 @@ int main(void)
     testLines();
     testTriangles();
     testObj();
+    testRotation();
+    testPerspective();
+    testViewportProjection();
     puts("Renderer C17 tests passed.");
     return 0;
 }

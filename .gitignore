@@ -16,3 +16,7 @@ build-release/
 
 /framebuffer-preview.png
 /obj_zbuffer.tga
+
+/obj_wireframe_*.tga
+/obj_filled_*.tga
+/obj_zbuffer_*.tga

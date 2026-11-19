@@ -22,27 +22,33 @@ static void printHelp(FILE *stream, const char *program)
     fprintf(stream,
         "Usage:\n"
         "  %s\n"
-        "  %s [--wireframe | --filled] <model.obj>\n"
+        "  %s [--wireframe | --filled] [--orthographic | --perspective] <model.obj>\n"
         "  %s --benchmark\n"
         "  %s --help\n\n"
         "Options:\n"
         "  -h, --help   Show this help and exit without rendering.\n"
         "  --wireframe  Draw OBJ face boundaries in white.\n"
         "  --filled     Draw filled OBJ triangles (default for model input).\n"
+        "  --orthographic  Rotate, then map directly to screen coordinates.\n"
+        "  --perspective   Rotate, perspective-divide, then map to screen (default).\n"
         "  --benchmark  Draw 16 million random lines and report CPU time.\n\n"
         "Without arguments, render the RGB triangle example.\n"
+        "OBJ vertices are rotated 30 degrees about Y; perspective camera distance is 3.\n"
         "Mode flags may appear before or after the model path.\n"
         "--wireframe and --filled require a model and cannot be combined.\n"
-        "--benchmark cannot be combined with a model or render mode.\n\n"
+        "--orthographic and --perspective require a model and cannot be combined.\n"
+        "--benchmark cannot be combined with a model, render mode, or projection.\n\n"
         "Model paths:\n"
         "  Use an explicit path, or a filename searched under obj/ and obj/<stem>/.\n\n"
         "Output files (saved in the working directory):\n"
         "  Example / benchmark: framebuffer.tga\n"
-        "  Wireframe:           obj_wireframe.tga\n"
-        "  Filled:              obj_filled.tga and obj_zbuffer.tga (grayscale depth)\n\n"
+        "  Wireframe:           obj_wireframe_<projection>.tga\n"
+        "  Filled:              obj_filled_<projection>.tga\n"
+        "  Grayscale depth:     obj_zbuffer_<projection>.tga\n"
+        "  <projection> is orthographic or perspective.\n\n"
         "Examples:\n"
-        "  %s --wireframe diablo3_pose.obj\n"
-        "  %s --filled obj/african_head/african_head.obj\n",
+        "  %s --wireframe --orthographic diablo3_pose.obj\n"
+        "  %s --filled --perspective obj/african_head/african_head.obj\n",
         program, program, program, program, program, program);
 }
 
@@ -50,7 +56,8 @@ static void printHelp(FILE *stream, const char *program)
  * @brief Run the RGB triangle example, OBJ renderer, or line benchmark.
  * @note Without arguments, save three color-interpolated triangles to framebuffer.tga.
  * @note The example and benchmark use a 128 x 128 RGB framebuffer.
- * @note OBJ rendering defaults to filled mode; --wireframe selects face boundaries.
+ * @note OBJ rendering defaults to filled perspective mode.
+ * @note --wireframe/--filled select drawing mode; --orthographic/--perspective select projection.
  * @note --benchmark runs the line benchmark and cannot be combined with a model.
  * @note --help or -h prints usage and exits before argument validation or rendering.
  * @return 0 on success; 1 for invalid arguments, allocation failure, or file errors.
@@ -69,6 +76,7 @@ int main(int argc, char **argv)
     }
     const char *modelPath = NULL;
     const char *renderMode = NULL;
+    const char *projectionMode = NULL;
     bool benchmark = false;
     for(int i = 1; i < argc; ++i)
     {
@@ -83,6 +91,16 @@ int main(int argc, char **argv)
             }
             renderMode = argument;
         }
+        else if(strcmp(argument, "--orthographic") == 0 || strcmp(argument, "--perspective") == 0)
+        {
+            if(projectionMode && strcmp(projectionMode, argument) != 0)
+            {
+                fprintf(stderr, "Choose either --orthographic or --perspective.\n");
+                fprintf(stderr, "Run '%s --help' for usage.\n", argv[0]);
+                return 1;
+            }
+            projectionMode = argument;
+        }
         else if(strcmp(argument, "--benchmark") == 0)
             benchmark = true;
         else if(argument[0] == '-' || modelPath)
@@ -94,7 +112,8 @@ int main(int argc, char **argv)
         else
             modelPath = argument;
     }
-    if((benchmark && (modelPath || renderMode)) || (renderMode && !modelPath))
+    if((benchmark && (modelPath || renderMode || projectionMode))
+        || ((renderMode || projectionMode) && !modelPath))
     {
         printHelp(stderr, argv[0]);
         return 1;
@@ -102,9 +121,11 @@ int main(int argc, char **argv)
     if(modelPath)
     {
         srand((unsigned)time(NULL));
+        const ObjProjection projection = projectionMode && strcmp(projectionMode, "--orthographic") == 0
+            ? OBJ_PROJECTION_ORTHOGRAPHIC : OBJ_PROJECTION_PERSPECTIVE;
         return renderMode && strcmp(renderMode, "--wireframe") == 0
-            ? renderObjWireframe(modelPath, NULL)
-            : renderObjFilled(modelPath, NULL, NULL);
+            ? renderObjWireframe(modelPath, NULL, projection)
+            : renderObjFilled(modelPath, NULL, NULL, projection);
     }
     TGAImage framebuffer = {0};
     if(!tgaImageInit(&framebuffer, width, height, TGA_RGB))
