@@ -19,7 +19,7 @@ static const double cameraDistance = 3.0;
 
 typedef struct Vertex { float x, y, z; } Vertex;
 typedef struct ScreenPoint { int x, y; double z; } ScreenPoint;
-typedef void (*FaceDrawer)(const ScreenPoint *, size_t, TGAImage *, TGAImage *);
+typedef void (*FaceDrawer)(const ScreenPoint *, size_t, TGAImage *, double *);
 
 /**
  * @brief Grow an owned array geometrically, retaining its storage on failure.
@@ -138,7 +138,7 @@ static char *resolveModelPath(const char *filename)
  * @param[in,out] zbuffer Unused in wireframe mode; may be NULL.
  */
 static void drawWireframeFace(const ScreenPoint *points, size_t count,
-    TGAImage *framebuffer, TGAImage *zbuffer)
+    TGAImage *framebuffer, double *zbuffer)
 {
     (void)zbuffer;
     ScreenPoint previous = points[0];
@@ -155,11 +155,11 @@ static void drawWireframeFace(const ScreenPoint *points, size_t count,
  * @param[in] points Ordered projected vertices with mapped depth values.
  * @param[in] count Number of points, at least three.
  * @param[in,out] framebuffer Destination RGB image.
- * @param[in,out] zbuffer Optional grayscale depth image, or NULL.
+ * @param[in,out] zbuffer Optional row-major double depth buffer, or NULL.
  * @note Pixels failing the depth comparison are skipped before color interpolation.
  */
 static void drawFilledFace(const ScreenPoint *points, size_t count,
-    TGAImage *framebuffer, TGAImage *zbuffer)
+    TGAImage *framebuffer, double *zbuffer)
 {
     for(size_t i = 1; i + 1 < count; ++i)
     {
@@ -240,7 +240,7 @@ static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCou
         if(!grown)
             return false;
         *points = grown;
-        (*points)[(*count)++] = (ScreenPoint){projected.x, projected.y, projected.z};
+        (*points)[(*count)++] = (ScreenPoint){projected.x, projected.y, z};
         text = end;
         while(*text && !isspace((unsigned char)*text))
             ++text;
@@ -256,7 +256,7 @@ invalid:
  * @param[in] objPath Explicit path or filename searched under obj/.
  * @param[in] outputPath Color TGA destination.
  * @param[in] drawFace Face drawing callback.
- * @param[in] zbufferPath Depth TGA destination; NULL or empty disables depth output.
+ * @param[in] zbufferPath Depth TGA destination; NULL or empty disables depth image output.
  * @param[in] projection Selected projection for all face vertices.
  * @return 0 on success or 1 for input, allocation, or output failure.
  */
@@ -277,7 +277,8 @@ static int renderObj(const char *objPath, const char *outputPath,
         return 1;
     }
     TGAImage framebuffer = {0};
-    TGAImage zbuffer = {0};
+    TGAImage depthImage = {0};
+    double *zbuffer = NULL;
     Vertex *vertices = NULL;
     ScreenPoint *points = NULL;
     char *line = NULL;
@@ -286,8 +287,15 @@ static int renderObj(const char *objPath, const char *outputPath,
     const double rotationDegrees = 30.0;
     int result = 1;
     if(!tgaImageInit(&framebuffer, framebufferWidth, framebufferHeight, TGA_RGB)
-        || (depthEnabled && !tgaImageInit(&zbuffer, framebufferWidth, framebufferHeight, TGA_GRAYSCALE)))
+        || (depthEnabled && !tgaImageInit(&depthImage, framebufferWidth, framebufferHeight, TGA_GRAYSCALE)))
         goto cleanup;
+    if(drawFace == drawFilledFace)
+    {
+        const size_t pixelCount = (size_t)framebufferWidth * framebufferHeight;
+        zbuffer = malloc(pixelCount * sizeof(*zbuffer));
+        if(!zbuffer) goto cleanup;
+        for(size_t i = 0; i < pixelCount; ++i) zbuffer[i] = -INFINITY;
+    }
     int readResult;
     while((readResult = readObjLine(file, &line, &lineCapacity)) > 0)
     {
@@ -312,7 +320,7 @@ static int renderObj(const char *objPath, const char *outputPath,
             if(count >= 3)
             {
                 ++faceCount;
-                drawFace(points, count, &framebuffer, depthEnabled ? &zbuffer : NULL);
+                drawFace(points, count, &framebuffer, zbuffer);
             }
         }
     }
@@ -327,7 +335,14 @@ static int renderObj(const char *objPath, const char *outputPath,
     printf("Saved image: %s\n", outputPath);
     if(depthEnabled)
     {
-        if(!tgaImageWrite(&zbuffer, zbufferPath, true, true))
+        for(int y = 0; y < framebufferHeight; ++y)
+            for(int x = 0; x < framebufferWidth; ++x)
+            {
+                const double depth = zbuffer[(size_t)y * framebufferWidth + x];
+                const uint8_t shade = (uint8_t)fmin(255.0, fmax(0.0, depth));
+                tgaImageSet(&depthImage, x, y, (TGAColor){{shade, 0, 0, 0}});
+            }
+        if(!tgaImageWrite(&depthImage, zbufferPath, true, true))
         {
             fprintf(stderr, "Failed to write %s\n", zbufferPath);
             goto cleanup;
@@ -344,7 +359,8 @@ cleanup:
     free(line);
     fclose(file);
     tgaImageDestroy(&framebuffer);
-    tgaImageDestroy(&zbuffer);
+    free(zbuffer);
+    tgaImageDestroy(&depthImage);
     return result;
 }
 
@@ -374,8 +390,8 @@ int renderObjWireframe(const char *objPath, const char *outputPath, ObjProjectio
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
- * @note Transformed x/y map to the viewport and z maps to grayscale depth.
- * @note Only pixels with a larger depth update both the color and depth images.
+ * @note Transformed x/y map to the viewport and unclamped z is retained in a double depth buffer.
+ * @note Larger depth wins even without depth image output; visualization alone is clamped.
  * @note No lighting or textures are applied.
  */
 int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath,

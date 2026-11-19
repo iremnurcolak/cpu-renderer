@@ -107,38 +107,45 @@ static void testLines(void)
 /** @brief Check RGB interpolation, scanline paths, culling, and depth compatibility. */
 static void testTriangles(void)
 {
-    TGAImage color = {0}, depth = {0};
+    TGAImage color = {0};
+    double depth[12 * 12];
+    for(size_t i = 0; i < 12 * 12; ++i) depth[i] = -INFINITY;
     CHECK(tgaImageInit(&color, 12, 12, TGA_RGBA));
-    CHECK(tgaImageInit(&depth, 12, 12, TGA_GRAYSCALE));
     const TGAColor pureBlue = {{255, 0, 0, 255}};
     drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,1,128,255,
-        red,green,pureBlue,&color,&depth);
+        red,green,pureBlue,&color,depth);
     CHECK(sameColor(tgaImageGet(&color, 1, 1), red, 4));
     CHECK(sameColor(tgaImageGet(&color, 9, 1), green, 4));
     CHECK(sameColor(tgaImageGet(&color, 1, 9), pureBlue, 4));
     const TGAColor middle = {{63, 63, 127, 255}};
     CHECK(sameColor(tgaImageGet(&color, 3, 3), middle, 4));
-    CHECK(tgaImageGet(&depth, 3, 3).bgra[0] == 96);
-    CHECK(tgaImageGet(&depth, 1, 9).bgra[0] == 255);
-    CHECK(tgaImageGet(&depth, 10, 10).bgra[0] == 0);
-    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,20,20,20,green,green,green,&color,&depth);
-    CHECK(tgaImageGet(&depth, 3, 3).bgra[0] == 96);
+    CHECK(depth[3 * 12 + 3] == 96.25);
+    CHECK(depth[9 * 12 + 1] == 255);
+    CHECK(depth[10 * 12 + 10] == -INFINITY);
+    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,20,20,20,green,green,green,&color,depth);
+    CHECK(depth[3 * 12 + 3] == 96.25);
     /* A farther face must not overwrite the interpolated color already present. */
     CHECK(sameColor(tgaImageGet(&color, 3, 3), middle, 4));
-    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,200,200,200,green,green,green,&color,&depth);
-    CHECK(tgaImageGet(&depth, 3, 3).bgra[0] == 200);
+    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,200,200,200,green,green,green,&color,depth);
+    CHECK(depth[3 * 12 + 3] == 200);
     CHECK(sameColor(tgaImageGet(&color, 3, 3), green, 4));
-    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,20,20,20,red,red,red,&color,&depth);
-    CHECK(tgaImageGet(&depth, 3, 3).bgra[0] == 200);
+    drawTriangleWithBoundingBoxDepth(1,1,9,1,1,9,20,20,20,red,red,red,&color,depth);
+    CHECK(depth[3 * 12 + 3] == 200);
     CHECK(sameColor(tgaImageGet(&color, 3, 3), green, 4));
     drawTriangleWithBoundingBox(1,1,1,9,9,1,red,red,red,&color);
+    CHECK(sameColor(tgaImageGet(&color, 3, 3), green, 4));
+    /* Depths beyond 255 and fractional differences must retain their ordering. */
+    drawTriangleWithBoundingBoxDepth(-1,-1,9,-1,-1,9,280,280,280,red,red,red,&color,depth);
+    drawTriangleWithBoundingBoxDepth(-1,-1,9,-1,-1,9,280.5,280.5,280.5,green,green,green,&color,depth);
+    drawTriangleWithBoundingBoxDepth(-1,-1,9,-1,-1,9,280.25,280.25,280.25,red,red,red,&color,depth);
+    CHECK(depth[3 * 12 + 3] == 280.5);
     CHECK(sameColor(tgaImageGet(&color, 3, 3), green, 4));
     drawTriangleWithMyScanlineV1(1,1,9,3,1,9,&color,white);
     CHECK(sameColor(tgaImageGet(&color, 3, 3), white, 4));
     drawTriangleWithMyScanlineV2(1,1,9,1,1,9,&color,red);
     CHECK(sameColor(tgaImageGet(&color, 3, 3), red, 4));
     tgaImageDestroy(&color);
-    tgaImageDestroy(&depth);
+
 }
 
 /** @brief Exercise shared OBJ parsing, negative/slash indices, paths, and output errors. */
@@ -179,7 +186,7 @@ static void testObj(void)
     CHECK(renderObjFilled("./mesh.obj", "missing-directory/out.tga", "", OBJ_PROJECTION_PERSPECTIVE) == 1);
     tgaImageDestroy(&wire);
     tgaImageDestroy(&filled);
-    tgaImageDestroy(&depth);
+
 }
 
 /** @brief Check Y rotation orientation, invariant length/axis, and inverse rotation. */

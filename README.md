@@ -95,16 +95,17 @@ Initialize `zbuffer` with `TGA_GRAYSCALE` to store only the first channel.
 - `drawTriangleWithBoundingBox` interpolates the B, G, and R channels of three
   vertex colors; output alpha is 255.
 - `drawTriangleWithBoundingBoxDepth` additionally accepts three mapped depth values
-  and an optional grayscale depth image pointer. This replaces the C++ overload.
+  and an optional row-major `double` depth buffer pointer. This replaces the C++ overload.
 
 The bounding-box paths skip triangles with signed area below 1 pixel squared,
 including clockwise and degenerate triangles when y increases upward. Assign the
 same color to all three vertices to draw a uniformly colored face.
 
 ```c
-// az, bz, and cz are mapped to [0, 255] before this call.
+// Initialize width * height depth samples to -INFINITY.
+// az, bz, and cz are unclamped mapped depths; values outside [0, 255] are valid.
 drawTriangleWithBoundingBoxDepth(ax, ay, bx, by, cx, cy,
-    az, bz, cz, red, green, blue, &framebuffer, &zbuffer);
+    az, bz, cz, red, green, blue, &framebuffer, zbuffer);
 ```
 
 All project functions have English Doxygen comments in the headers and sources.
@@ -161,7 +162,8 @@ images above.
 Brightness represents depth, not lighting: brighter pixels are closer to the
 camera, and untouched pixels are black. This renderer also divides z during
 the perspective step, so brightness changes between the two modes as well as
-the projected shape. Both images use the same 8-bit depth mapping.
+the projected shape. Both images use the same 8-bit visualization mapping. Depth testing uses a
+separate `double` array; clamping the image does not affect visibility.
 
 Generate the source TGA images with:
 
@@ -207,12 +209,16 @@ A NULL output path selects the corresponding filename with the projection suffix
 output. Return values are 0 on success and 1 on input, allocation, or output failure.
 
 Depth values are interpolated from the transformed z coordinates (after the
-perspective divide when enabled), mapped from [-1, 1] to [0, 255] and clamped before writing an 8-bit grayscale image. Larger values are
-brighter; untouched pixels remain black. With a depth image enabled, pixels are
-drawn only if their quantized z is greater than the stored value. This comparison
-runs before color interpolation and updates both color and depth for visible
-pixels. Equal-depth samples retain the first drawn pixel; with depth output
-disabled, faces are drawn in input order.
+perspective divide when enabled) and mapped using `(z + 1) * 255 / 2` without
+clamping or integer conversion. A row-major `double` array stores these values,
+initialized to negative infinity. Larger depth wins; equal-depth samples retain
+the first drawn pixel. Depth testing runs before color interpolation and remains
+active for filled models even when depth image output is disabled.
+
+After rendering, the depth array is converted to an 8-bit grayscale TGA for
+visualization only. Values are clamped to [0, 255]; untouched pixels remain black.
+Depths such as 260 and 280 both appear white in the TGA but remain distinct during
+visibility tests, avoiding overflow and saturation errors in face ordering.
 
 The transformations can also be used independently:
 

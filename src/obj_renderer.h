@@ -29,8 +29,8 @@ int renderObjWireframe(const char *objPath, const char *outputPath, ObjProjectio
  * @pre Polygonal faces must be convex for fan triangulation.
  * @note Back-facing triangles and triangles with signed area below 1 are skipped.
  * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
- * @note Transformed x/y map to the viewport and z maps to grayscale depth.
- * @note Only pixels with a larger depth update both the color and depth images.
+ * @note Transformed x/y map to the viewport and unclamped z is retained in a double depth buffer.
+ * @note Larger depth wins even without depth image output; visualization alone is clamped.
  * @note No lighting or textures are applied.
  */
 int renderObjFilled(const char *objPath, const char *outputPath, const char *zbufferPath,

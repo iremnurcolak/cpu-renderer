@@ -236,7 +236,7 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
 }
 
 /**
- * @brief Fill a colored triangle and write interpolated depth to a grayscale image.
+ * @brief Fill a colored triangle using a double-precision depth buffer.
  * @note Triangles with signed area below 1 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
  * @note Triangle edges are included. B, G, and R channels are interpolated separately.
@@ -247,12 +247,12 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
  * @param[in] by Y coordinate of vertex b.
  * @param[in] cx X coordinate of vertex c.
  * @param[in] cy Y coordinate of vertex c.
- * @param[in] az Depth at vertex A, mapped to [0, 255].
- * @param[in] bz Depth at vertex B, mapped to [0, 255].
- * @param[in] cz Depth at vertex C, mapped to [0, 255].
+ * @param[in] az Unclamped depth at vertex A.
+ * @param[in] bz Unclamped depth at vertex B.
+ * @param[in] cz Unclamped depth at vertex C.
  * @param[in,out] framebuffer Image receiving the rendered pixels.
- * @param[in,out] zbuffer Grayscale image matching the framebuffer, or NULL to disable depth.
- * @note Depth retains the largest quantized value, initialized to zero.
+ * @param[in,out] zbuffer Row-major double array matching the framebuffer, or NULL to disable depth.
+ * @note Initialize every depth sample to -INFINITY; the largest value is retained.
  * @note Depth testing precedes color interpolation and pixel writes; larger z is nearer.
  * @param[in] colorA Color at vertex A in BGRA order.
  * @param[in] colorB Color at vertex B in BGRA order.
@@ -261,13 +261,19 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
 void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, int cy,
     double az, double bz, double cz,
     TGAColor  colorA, TGAColor  colorB, TGAColor  colorC,
-    TGAImage * framebuffer, TGAImage * zbuffer)
+    TGAImage * framebuffer, double * zbuffer)
 {
     int bottomLeftX;
     int bottomLeftY;
     int topRightX;
     int topRightY;
     findTriangleBoundingBox(ax, ay, bx, by, cx, cy, &bottomLeftX, &bottomLeftY, &topRightX, &topRightY);
+
+    if(!framebuffer || !framebuffer->data) return;
+    bottomLeftX = maxInt(bottomLeftX, 0);
+    bottomLeftY = maxInt(bottomLeftY, 0);
+    topRightX = minInt(topRightX, framebuffer->width - 1);
+    topRightY = minInt(topRightY, framebuffer->height - 1);
 
     double totalArea = calculateTriangleAreaSigned(ax, ay, bx, by, cx, cy);
 
@@ -295,11 +301,12 @@ void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, in
                 //the vertex is not inside the triangle
             }
 
-            if(zbuffer && zbuffer->data)
+            if(zbuffer)
             {
-                const uint8_t z = (uint8_t)clampDouble(alpha * az + beta * bz + gamma * cz, 0.0, 255.0);
-                if (z <= tgaImageGet(zbuffer, x, y).bgra[0]) continue;
-                tgaImageSet(zbuffer, x, y, (TGAColor){{z, 0, 0, 0}});
+                const double z = alpha * az + beta * bz + gamma * cz;
+                const size_t index = (size_t)y * framebuffer->width + x;
+                if(z <= zbuffer[index]) continue;
+                zbuffer[index] = z;
             }
 
             TGAColor color = {{0}};
