@@ -94,16 +94,18 @@ Initialize `zbuffer` with `TGA_GRAYSCALE` to store only the first channel.
   the right endpoint of each horizontal span.
 - `drawTriangleWithBoundingBox` interpolates the B, G, and R channels of three
   vertex colors; output alpha is 255.
-- `drawTriangleWithBoundingBoxDepth` additionally accepts three mapped depth values
-  and an optional row-major `double` depth buffer pointer. This replaces the C++ overload.
+- `drawTriangleWithBoundingBoxDepth` accepts subpixel screen coordinates, three
+  unscaled depth values, and an optional row-major `double` depth buffer pointer.
+- `rasterizeTriangle` accepts clip-space vertices and a viewport matrix, then
+  performs homogeneous division before calling the bounding-box rasterizer.
 
-The bounding-box paths skip triangles with signed area below 1 pixel squared,
+The bounding-box paths skip triangles with signed area below 0.5 pixel squared,
 including clockwise and degenerate triangles when y increases upward. Assign the
 same color to all three vertices to draw a uniformly colored face.
 
 ```c
 // Initialize width * height depth samples to -INFINITY.
-// az, bz, and cz are unclamped mapped depths; values outside [0, 255] are valid.
+// az, bz, and cz are unscaled depths; negative values are valid.
 drawTriangleWithBoundingBoxDepth(ax, ay, bx, by, cx, cy,
     az, bz, cz, red, green, blue, &framebuffer, zbuffer);
 ```
@@ -125,8 +127,8 @@ Drawing-mode and projection flags can precede or follow the model path.
 Filled rendering with perspective is the default. Use one flag from each group:
 
 - `--wireframe` or `--filled`: Draw face boundaries or filled triangles.
-- `--orthographic`: Rotate, then apply only viewport mapping with `vec3Project`.
-- `--perspective`: Rotate, apply `vec3Perspective`, then map to the viewport.
+- `--orthographic`: Apply the camera frame, then viewport mapping.
+- `--perspective`: Apply the camera frame, perspective division, and viewport mapping.
 
 Conflicting flags within either group are rejected. Projection and drawing-mode
 flags require a model and cannot be combined with `--benchmark`. `--help` lists
@@ -145,8 +147,9 @@ Different projections have distinct output names, so both results can be kept.
 ### Orthographic and perspective comparison
 
 These depth images were rendered from `obj/african_head/african_head.obj` at
-800 × 800 with the same 30-degree Y rotation. They use the original viewport
-without cropping or resizing, so the silhouettes can be compared directly.
+800 × 800 with the same camera: `eye = {-1, 0, 2}`, `center = {0, 0, 0}`,
+`up = {0, 1, 0}`. Both use the viewport `(50, 50, 700, 700)` without
+cropping or resizing, so the silhouettes can be compared directly.
 
 | Orthographic | Perspective |
 |---|---|
@@ -154,8 +157,8 @@ without cropping or resizing, so the silhouettes can be compared directly.
 
 Orthographic projection maps x and y to the screen independently of depth:
 an object's apparent size stays the same as it moves closer or farther away.
-Perspective first divides the rotated coordinates by `1 - z / 3`, then applies
-the same viewport mapping. Parts closer to the camera appear larger, while
+Perspective first divides camera-frame coordinates by `1 - z / f`, where
+`f = length(eye - center) = sqrt(5)`, then applies the same viewport mapping. Parts closer to the camera appear larger, while
 farther parts appear smaller. Compare the nose, face outline, and neck in the
 images above.
 
@@ -185,12 +188,34 @@ when a folder has a different name, such as `obj/boggie/head.obj`.
 Relative paths are resolved from the terminal's working directory.
 
 The shared OBJ reader handles vertex positions (`v`), slash-separated and
-negative face indices, and polygonal faces. In both OBJ modes, each 3D vertex
-passes through `vec3RotateY` (30 degrees), optionally `vec3Perspective`
-(camera distance 3), and `vec3Project`, in that order. Orthographic mode skips
-the perspective division.
-The final mapping sends x/y from [-1, 1] to an 800 × 800 framebuffer without
-automatically fitting the model. Wireframe mode draws white face boundaries.
+negative face indices, and polygonal faces. Both drawing modes use the same
+matrix camera pipeline, based on the
+[Better camera lesson](https://haqr.eu/tinyrenderer/camera/):
+
+1. Embed each position as a homogeneous `Vec4` with `w = 1`.
+2. Multiply by the precomputed `Perspective * ModelView` matrix to get clip coordinates.
+3. Divide x, y, and z by w to get normalized device coordinates.
+4. Apply `Viewport` to x/y while preserving z for depth testing.
+
+Orthographic mode uses the identity matrix for `Perspective`. The former fixed
+30-degree Y rotation is replaced by a camera frame built from `eye`, `center`,
+and `up`. Defaults are declared as `cameraEye`, `cameraCenter`, and `cameraUp`
+at the top of `src/obj_renderer.c`; edit these to change the view. Perspective
+focal distance is computed from `length(eye - center)`.
+
+The tutorial's frame has its origin at `center`: `cameraLookAt` translates by
+`-center`, then expresses the point along the camera's right, up, and backward
+axes. It does not use the eye-origin convention of a standard OpenGL look-at
+matrix; its perspective matrix places the eye at z = focal distance.
+`cameraLookAt` rejects coincident eye/center and an up direction parallel to
+the viewing axis.
+
+The viewport leaves a 1/16 margin on each side of the 800 × 800 framebuffer.
+`Mat4` stores rows in `data[row][column]` and multiplies column vectors; in
+`mat4Multiply(a, b)`, b is applied first. `rasterizeTriangle` receives three clip
+vertices, performs division and viewport mapping, and keeps screen coordinates
+as doubles until sampling pixels. The projected determinant must be at least 1
+for a triangle to be drawn. Wireframe mode draws white face boundaries.
 Filled mode splits convex faces into triangle fans and assigns a random color
 to each triangle. Lighting and textures are not applied.
 
@@ -208,19 +233,43 @@ A NULL output path selects the corresponding filename with the projection suffix
 `renderObjFilled`, NULL selects the default depth filename; `""` disables depth
 output. Return values are 0 on success and 1 on input, allocation, or output failure.
 
-Depth values are interpolated from the transformed z coordinates (after the
-perspective divide when enabled) and mapped using `(z + 1) * 255 / 2` without
-clamping or integer conversion. A row-major `double` array stores these values,
-initialized to negative infinity. Larger depth wins; equal-depth samples retain
-the first drawn pixel. Depth testing runs before color interpolation and remains
-active for filled models even when depth image output is disabled.
+Depth testing interpolates unscaled z/w values in a row-major `double` array
+initialized to negative infinity. Viewport mapping leaves depth unchanged.
+Larger depth wins; equal-depth samples retain the first drawn pixel. Depth
+testing runs before color interpolation and remains active for filled models
+even when depth image output is disabled.
 
-After rendering, the depth array is converted to an 8-bit grayscale TGA for
-visualization only. Values are clamped to [0, 255]; untouched pixels remain black.
-Depths such as 260 and 280 both appear white in the TGA but remain distinct during
-visibility tests, avoiding overflow and saturation errors in face ordering.
+After rendering, the array is converted to an 8-bit grayscale TGA for
+visualization only: `(depth + 1) * 255 / 2` is clamped to [0, 255]. Untouched
+pixels remain black. Different depths may appear equally bright in the TGA
+but remain distinct during visibility tests.
 
-The transformations can also be used independently:
+Camera matrices can also be used directly:
+
+```c
+#include "camera.h"
+
+Vec3 eye = {-1, 0, 2}, center = {0, 0, 0}, up = {0, 1, 0};
+Mat4 modelView;
+if (cameraLookAt(&modelView, eye, center, up)) {
+    Mat4 perspective = cameraPerspective(vec3Length(vec3Subtract(eye, center)));
+    Mat4 viewport = cameraViewport(50, 50, 700, 700);
+    Mat4 viewProjection = mat4Multiply(perspective, modelView);
+    Vec4 clip = mat4MultiplyVec4(viewProjection,
+        (Vec4){vertex.x, vertex.y, vertex.z, 1});
+    Vec3 screen;
+    if (cameraClipToScreen(clip, viewport, &screen)) {
+        // screen.x/y are subpixel coordinates; screen.z is unscaled depth.
+    }
+}
+```
+
+Faces with a vertex at or behind the camera (`w <= 0`) are skipped in
+perspective mode; near-plane clipping is not implemented. Orthographic mode
+has w = 1 and does not apply a perspective camera-plane test. Rasterization
+clips the bounding box to framebuffer bounds before accessing the depth array.
+
+The earlier scalar transformations remain available for comparison:
 
 ```c
 Vec3 rotated = vec3RotateY(vertex, 30.0);
@@ -228,11 +277,9 @@ Vec3 perspective = vec3Perspective(rotated, 3.0);
 ProjectedVertex projected = vec3Project(perspective, width, height);
 ```
 
-`vec3Project` applies only the viewport mapping; it does not repeat the
-perspective divide. As in the tutorial, the positive x/y boundary maps to
-width/height. Out-of-bounds pixel writes are ignored. Faces with a vertex on or
-behind the camera are skipped in perspective mode; near-plane clipping is not
-implemented. Orthographic mode does not apply the perspective camera-plane test.
+`vec3Project` applies the previous full-screen viewport and grayscale depth
+mapping. These helpers are retained for study; OBJ rendering now uses the
+matrix camera pipeline above.
 
 ## Viewing output and debugging
 

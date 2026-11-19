@@ -1,3 +1,4 @@
+#include "camera.h"
 #include "colors.h"
 #include "line_renderer.h"
 #include "obj_renderer.h"
@@ -164,14 +165,14 @@ static void testObj(void)
     CHECK(tgaImageRead(&depth, "depth.tga"));
     CHECK(wire.width == 800 && depth.bytesPerPixel == 1 && filled.bytesPerPixel == 3);
     CHECK(wire.data != NULL && tgaImageGet(&wire, 400, 400).bgra[0] == 0);
-    /* The first vertex maps to (90, 234) after rotation and perspective division.
-       Reading the bottom-origin TGA reverses its row to 800 - 1 - 234. */
-    CHECK(sameColor(tgaImageGet(&wire, 90, 565), white, 3));
+    /* The camera maps the first vertex to (159, 265) in the inset viewport.
+       Reading the bottom-origin TGA reverses its row to 800 - 1 - 265. */
+    CHECK(sameColor(tgaImageGet(&wire, 159, 534), white, 3));
     CHECK(renderObjWireframe("./mesh.obj", "wire-orthographic.tga", OBJ_PROJECTION_ORTHOGRAPHIC) == 0);
     TGAImage orthographic = {0};
     CHECK(tgaImageRead(&orthographic, "wire-orthographic.tga"));
-    /* Without perspective, the rotated vertex maps to (26, 200). */
-    CHECK(sameColor(tgaImageGet(&orthographic, 26, 599), white, 3));
+    /* Without perspective, the same camera maps the vertex to (86, 225). */
+    CHECK(sameColor(tgaImageGet(&orthographic, 86, 574), white, 3));
     CHECK(memcmp(wire.data, orthographic.data, 800 * 800 * 3) != 0);
     tgaImageDestroy(&orthographic);
     CHECK(renderObjFilled("./mesh.obj", NULL, NULL, OBJ_PROJECTION_ORTHOGRAPHIC) == 0);
@@ -186,7 +187,7 @@ static void testObj(void)
     CHECK(renderObjFilled("./mesh.obj", "missing-directory/out.tga", "", OBJ_PROJECTION_PERSPECTIVE) == 1);
     tgaImageDestroy(&wire);
     tgaImageDestroy(&filled);
-
+    tgaImageDestroy(&depth);
 }
 
 /** @brief Check Y rotation orientation, invariant length/axis, and inverse rotation. */
@@ -245,6 +246,85 @@ static void testViewportProjection(void)
     CHECK(outside.x == -200 && outside.y == 450 && outside.z == 127);
 }
 
+/** @brief Check homogeneous matrix composition, camera basis, and viewport depth preservation. */
+static void testCamera(void)
+{
+    const double epsilon = 1e-12;
+    const Vec3 eye = {-1, 0, 2};
+    const Vec3 center = {0, 0, 0};
+    const Vec3 up = {0, 1, 0};
+    Mat4 modelView;
+    CHECK(cameraLookAt(&modelView, eye, center, up));
+    const Vec4 eyeInFrame = mat4MultiplyVec4(modelView, (Vec4){-1, 0, 2, 1});
+    CHECK(fabs(eyeInFrame.x) < epsilon && fabs(eyeInFrame.y) < epsilon);
+    CHECK(fabs(eyeInFrame.z - sqrt(5.0)) < epsilon && eyeInFrame.w == 1.0);
+    /* The camera axes form a right-handed orthonormal frame. */
+    const Vec3 right = {modelView.data[0][0], modelView.data[0][1], modelView.data[0][2]};
+    const Vec3 vertical = {modelView.data[1][0], modelView.data[1][1], modelView.data[1][2]};
+    const Vec3 backward = {modelView.data[2][0], modelView.data[2][1], modelView.data[2][2]};
+    CHECK(fabs(vec3Length(right) - 1.0) < epsilon);
+    CHECK(fabs(vec3Length(vertical) - 1.0) < epsilon);
+    CHECK(fabs(vec3Dot(right, backward)) < epsilon);
+    CHECK(vec3Length(vec3Subtract(vec3Cross(right, vertical), backward)) < epsilon);
+
+    Mat4 translatedView;
+    CHECK(cameraLookAt(&translatedView, (Vec3){1, 2, 5}, (Vec3){1, 2, 3}, up));
+    const Vec4 target = mat4MultiplyVec4(translatedView, (Vec4){1, 2, 3, 1});
+    CHECK(target.x == 0 && target.y == 0 && target.z == 0 && target.w == 1);
+    CHECK(!cameraLookAt(&translatedView, center, center, up));
+    CHECK(!cameraLookAt(&translatedView, eye, center, eye));
+    CHECK(!cameraLookAt(&translatedView, eye, center, (Vec3){0, 0, 0}));
+    CHECK(!cameraLookAt(&translatedView, (Vec3){NAN, 0, 2}, center, up));
+
+    const Mat4 perspective = cameraPerspective(3.0);
+    const Mat4 viewport = cameraViewport(10, 20, 200, 100);
+    const Mat4 composed = mat4Multiply(perspective, modelView);
+    const Vec4 source = {0.2, 0.4, 0.7, 1.0};
+    const Vec4 clip = mat4MultiplyVec4(composed, source);
+    const Vec4 separate = mat4MultiplyVec4(perspective, mat4MultiplyVec4(modelView, source));
+    CHECK(fabs(clip.x - separate.x) < epsilon && fabs(clip.y - separate.y) < epsilon);
+    CHECK(fabs(clip.z - separate.z) < epsilon && fabs(clip.w - separate.w) < epsilon);
+    Vec3 screen;
+    CHECK(cameraClipToScreen(clip, viewport, &screen));
+    const Vec4 view = mat4MultiplyVec4(modelView, source);
+    const Vec3 reference = vec3Perspective((Vec3){view.x, view.y, view.z}, 3.0);
+    CHECK(fabs(screen.x - (110.0 + 100.0 * reference.x)) < epsilon);
+    CHECK(fabs(screen.y - (70.0 + 50.0 * reference.y)) < epsilon);
+    CHECK(fabs(screen.z - reference.z) < epsilon);
+    CHECK(cameraClipToScreen((Vec4){-1, -1, -2.5, 1}, viewport, &screen));
+    CHECK(screen.x == 10 && screen.y == 20 && screen.z == -2.5);
+    CHECK(cameraClipToScreen((Vec4){1, 1, 2.5, 1}, viewport, &screen));
+    CHECK(screen.x == 210 && screen.y == 120 && screen.z == 2.5);
+    CHECK(!cameraClipToScreen((Vec4){0, 0, 0, 0}, viewport, &screen));
+    CHECK(!cameraClipToScreen((Vec4){0, 0, 0, -1}, viewport, &screen));
+    CHECK(!cameraClipToScreen((Vec4){INFINITY, 0, 0, 1}, viewport, &screen));
+}
+
+/** @brief Verify subpixel coverage, homogeneous division, and negative depth testing. */
+static void testClipRasterization(void)
+{
+    TGAImage image = {0};
+    CHECK(tgaImageInit(&image, 12, 12, TGA_RGB));
+    double depth[12 * 12];
+    for(size_t i = 0; i < 12 * 12; ++i) depth[i] = -INFINITY;
+    const Mat4 viewport = mat4Identity();
+    Vec4 clip[3] = {{1.25, 1.25, -2, 1}, {9.25, 1.25, -2, 1}, {1.25, 9.25, -2, 1}};
+    rasterizeTriangle(clip, viewport, red, red, red, &image, depth);
+    CHECK(sameColor(tgaImageGet(&image, 1, 1), (TGAColor){{0}}, 3));
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), red, 3));
+    CHECK(depth[2 * 12 + 2] == -2.0);
+    /* Scaling all four components must leave the represented point unchanged. */
+    for(int i = 0; i < 3; ++i) clip[i] = vec4Scale(clip[i], 2.0);
+    for(int i = 0; i < 3; ++i) clip[i].z = -2.0;
+    rasterizeTriangle(clip, viewport, green, green, green, &image, depth);
+    CHECK(depth[2 * 12 + 2] == -1.0);
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), green, 3));
+    clip[0].w = 0.0;
+    rasterizeTriangle(clip, viewport, red, red, red, &image, depth);
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), green, 3));
+    tgaImageDestroy(&image);
+}
+
 /** @brief Run C API regression tests and report success. */
 int main(void)
 {
@@ -255,6 +335,8 @@ int main(void)
     testRotation();
     testPerspective();
     testViewportProjection();
+    testCamera();
+    testClipRasterization();
     puts("Renderer C17 tests passed.");
     return 0;
 }

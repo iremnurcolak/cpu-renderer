@@ -2,6 +2,7 @@
 #define TRIANGLE_RENDERER_H
 
 #include "tgaimage.h"
+#include "mat.h"
 
 /**
  * @brief Fill a triangle using floating-point scanline intersections.
@@ -52,7 +53,7 @@ void drawTriangleWithMyScanlineV2(
 
 /**
  * @brief Fill a triangle with barycentrically interpolated RGB vertex colors.
- * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note Triangles with signed area below 0.5 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
  * @note Triangle edges are included. B, G, and R channels are interpolated separately.
  * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
@@ -73,7 +74,7 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
 
 /**
  * @brief Fill a colored triangle using a double-precision depth buffer.
- * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note Triangles with signed area below 0.5 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
  * @note Triangle edges are included. B, G, and R channels are interpolated separately.
  * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
@@ -94,9 +95,24 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
  * @param[in] colorB Color at vertex B in BGRA order.
  * @param[in] colorC Color at vertex C in BGRA order.
  */
-void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, int cy,
+void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by, double cx, double cy,
     double az, double bz, double cz,
     TGAColor  colorA, TGAColor  colorB, TGAColor  colorC,
     TGAImage * framebuffer, double * zbuffer);
+
+/**
+ * @brief Rasterize a clip-space triangle after homogeneous division and viewport mapping.
+ * @param[in] clip Three vertices transformed by perspective * modelView.
+ * @param[in] viewport Screen mapping matrix preserving depth.
+ * @param[in] colorA Color at the first vertex.
+ * @param[in] colorB Color at the second vertex.
+ * @param[in] colorC Color at the third vertex.
+ * @param[in,out] framebuffer Destination RGB or RGBA image.
+ * @param[in,out] zbuffer Row-major double depth array, initialized to -INFINITY, or NULL.
+ * @note Faces with nonfinite vertices or nonpositive w are skipped without near-plane clipping.
+ */
+void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport,
+    TGAColor colorA, TGAColor colorB, TGAColor colorC,
+    TGAImage *framebuffer, double *zbuffer);
 
 #endif

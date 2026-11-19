@@ -10,6 +10,7 @@ add_library(renderer
     src/colors.c
     src/vec.c
     src/mat.c
+    src/camera.c
     src/line_renderer.c
     src/triangle_renderer.c
     src/obj_renderer.c

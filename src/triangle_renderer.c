@@ -2,7 +2,9 @@
 #include "line_renderer.h"
 #include "colors.h"
 
+#include <math.h>
 #include <stddef.h>
+#include "camera.h"
 
 /**
  * @brief Swap two integer coordinates in place.
@@ -42,11 +44,8 @@ static double clampDouble(double value, double lower, double upper)
  * @param[out] topRightX Maximum vertex x coordinate.
  * @param[out] topRightY Maximum vertex y coordinate.
  */
-static void findTriangleBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
-                                    int *bottomLeftX,
-                                    int *bottomLeftY,
-                                    int *topRightX,
-                                    int *topRightY);
+static void findTriangleBoundingBox(double ax, double ay, double bx, double by, double cx, double cy,
+    double *bottomLeftX, double *bottomLeftY, double *topRightX, double *topRightY);
 /**
  * @brief Calculate the signed area of a triangle.
  * @return Positive for counterclockwise winding with y increasing upward,
@@ -58,7 +57,7 @@ static void findTriangleBoundingBox(int ax, int ay, int bx, int by, int cx, int 
  * @param[in] cx X coordinate of vertex c.
  * @param[in] cy Y coordinate of vertex c.
  */
-static double calculateTriangleAreaSigned(int ax, int ay, int bx, int by, int cx, int cy);
+static double calculateTriangleAreaSigned(double ax, double ay, double bx, double by, double cx, double cy);
 
 /**
  * @brief Fill a triangle using floating-point scanline intersections.
@@ -212,7 +211,7 @@ void drawTriangleWithMyScanlineV2(int ax, int ay, int bx, int by, int cx, int cy
 
 /**
  * @brief Fill a triangle with barycentrically interpolated RGB vertex colors.
- * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note Triangles with signed area below 0.5 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
  * @note Triangle edges are included. B, G, and R channels are interpolated separately.
  * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
@@ -237,7 +236,7 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
 
 /**
  * @brief Fill a colored triangle using a double-precision depth buffer.
- * @note Triangles with signed area below 1 pixel squared are skipped.
+ * @note Triangles with signed area below 0.5 pixel squared are skipped.
  * @note With y increasing upward, only counterclockwise triangles are drawn.
  * @note Triangle edges are included. B, G, and R channels are interpolated separately.
  * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
@@ -258,28 +257,31 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
  * @param[in] colorB Color at vertex B in BGRA order.
  * @param[in] colorC Color at vertex C in BGRA order.
  */
-void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, int cy,
+void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by, double cx, double cy,
     double az, double bz, double cz,
     TGAColor  colorA, TGAColor  colorB, TGAColor  colorC,
     TGAImage * framebuffer, double * zbuffer)
 {
-    int bottomLeftX;
-    int bottomLeftY;
-    int topRightX;
-    int topRightY;
-    findTriangleBoundingBox(ax, ay, bx, by, cx, cy, &bottomLeftX, &bottomLeftY, &topRightX, &topRightY);
-
-    if(!framebuffer || !framebuffer->data) return;
-    bottomLeftX = maxInt(bottomLeftX, 0);
-    bottomLeftY = maxInt(bottomLeftY, 0);
-    topRightX = minInt(topRightX, framebuffer->width - 1);
-    topRightY = minInt(topRightY, framebuffer->height - 1);
+    if(!framebuffer || !framebuffer->data || !isfinite(ax) || !isfinite(ay)
+        || !isfinite(bx) || !isfinite(by) || !isfinite(cx) || !isfinite(cy)
+        || !isfinite(az) || !isfinite(bz) || !isfinite(cz)) return;
+    double minX, minY, maxX, maxY;
+    findTriangleBoundingBox(ax, ay, bx, by, cx, cy, &minX, &minY, &maxX, &maxY);
+    minX = fmax(ceil(minX), 0.0);
+    minY = fmax(ceil(minY), 0.0);
+    maxX = fmin(floor(maxX), framebuffer->width - 1.0);
+    maxY = fmin(floor(maxY), framebuffer->height - 1.0);
+    if(minX > maxX || minY > maxY) return;
+    const int bottomLeftX = (int)minX;
+    const int bottomLeftY = (int)minY;
+    const int topRightX = (int)maxX;
+    const int topRightY = (int)maxY;
 
     double totalArea = calculateTriangleAreaSigned(ax, ay, bx, by, cx, cy);
 
-    // do not draw back-face triangles and triangles that has area less than 1 pixel
+    // Skip back-facing triangles and projected determinants below one.
     // negative area means the normal of the triangle points back
-    if(totalArea < 1)
+    if(!isfinite(totalArea) || totalArea < 0.5)
     {
         return;
     }
@@ -325,6 +327,30 @@ void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, in
 }
 
 /**
+ * @brief Rasterize a clip-space triangle after homogeneous division and viewport mapping.
+ * @param[in] clip Three vertices transformed by perspective * modelView.
+ * @param[in] viewport Screen mapping matrix preserving depth.
+ * @param[in] colorA Color at the first vertex.
+ * @param[in] colorB Color at the second vertex.
+ * @param[in] colorC Color at the third vertex.
+ * @param[in,out] framebuffer Destination RGB or RGBA image.
+ * @param[in,out] zbuffer Row-major double depth array, initialized to -INFINITY, or NULL.
+ * @note Faces with nonfinite vertices or nonpositive w are skipped without near-plane clipping.
+ */
+void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport,
+    TGAColor colorA, TGAColor colorB, TGAColor colorC,
+    TGAImage *framebuffer, double *zbuffer)
+{
+    Vec3 screen[3];
+    for(int i = 0; i < 3; ++i)
+        if(!cameraClipToScreen(clip[i], viewport, &screen[i])) return;
+    drawTriangleWithBoundingBoxDepth(screen[0].x, screen[0].y,
+        screen[1].x, screen[1].y, screen[2].x, screen[2].y,
+        screen[0].z, screen[1].z, screen[2].z,
+        colorA, colorB, colorC, framebuffer, zbuffer);
+}
+
+/**
  * @brief Find the axis-aligned bounding box of three vertices.
  * @note Corner names assume the y axis increases upward.
  * @param[in] ax X coordinate of vertex a.
@@ -338,48 +364,13 @@ void drawTriangleWithBoundingBoxDepth(int ax, int ay, int bx, int by, int cx, in
  * @param[out] topRightX Maximum vertex x coordinate.
  * @param[out] topRightY Maximum vertex y coordinate.
  */
-static void findTriangleBoundingBox(
-    int ax,
-    int ay,
-    int bx,
-    int by,
-    int cx,
-    int cy,
-    int *bottomLeftX,
-    int *bottomLeftY,
-    int *topRightX,
-    int *topRightY)
+static void findTriangleBoundingBox(double ax, double ay, double bx, double by, double cx, double cy,
+    double *bottomLeftX, double *bottomLeftY, double *topRightX, double *topRightY)
 {
-    if (ay > by)
-    {
-        swapInt(&ay, &by);
-    }
-    if (ay > cy)
-    {
-        swapInt(&ay, &cy);
-    }
-    if (by > cy)
-    {
-        swapInt(&by, &cy);
-    }
-
-    if (ax > bx)
-    {
-        swapInt(&ax, &bx);
-    }
-    if (ax > cx)
-    {
-        swapInt(&ax, &cx);
-    }
-    if (bx > cx)
-    {
-        swapInt(&bx, &cx);
-    }
-
-    *bottomLeftX = ax;
-    *bottomLeftY = ay;
-    *topRightX = cx;
-    *topRightY = cy;
+    *bottomLeftX = fmin(ax, fmin(bx, cx));
+    *bottomLeftY = fmin(ay, fmin(by, cy));
+    *topRightX = fmax(ax, fmax(bx, cx));
+    *topRightY = fmax(ay, fmax(by, cy));
 }
 
 /**
@@ -393,9 +384,7 @@ static void findTriangleBoundingBox(
  * @param[in] cx X coordinate of vertex c.
  * @param[in] cy Y coordinate of vertex c.
  */
-static double calculateTriangleAreaSigned(int ax, int ay, int bx, int by, int cx, int cy)
+static double calculateTriangleAreaSigned(double ax, double ay, double bx, double by, double cx, double cy)
 {
-    return 0.5 * (((double)by - ay) * ((double)bx + ax)
-        + ((double)cy - by) * ((double)cx + bx)
-        + ((double)ay - cy) * ((double)ax + cx));
+    return 0.5 * ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
 }

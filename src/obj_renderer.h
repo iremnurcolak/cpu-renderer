@@ -14,8 +14,8 @@ typedef enum
  * @param[in] outputPath Destination TGA path; NULL uses obj_wireframe_<projection>.tga.
  * @param[in] projection Orthographic or perspective-plus-viewport projection.
  * @return 0 on success; 1 for invalid arguments, allocation failures, or file errors.
- * @note Transformed x/y map from [-1, 1] without automatic fitting.
- * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
+ * @note Normalized x/y map to an inset viewport without automatic fitting.
+ * @note Camera eye=(-1,0,2), center=(0,0,0), up=(0,1,0); focal distance is |eye-center|.
  */
 int renderObjWireframe(const char *objPath, const char *outputPath, ObjProjection projection);
 
@@ -27,9 +27,9 @@ int renderObjWireframe(const char *objPath, const char *outputPath, ObjProjectio
  * @param[in] projection Orthographic or perspective-plus-viewport projection.
  * @return 0 on success; 1 for invalid arguments, allocation failures, or file errors.
  * @pre Polygonal faces must be convex for fan triangulation.
- * @note Back-facing triangles and triangles with signed area below 1 are skipped.
- * @note Vertices are rotated 30 degrees about Y; perspective mode uses camera distance 3.
- * @note Transformed x/y map to the viewport and unclamped z is retained in a double depth buffer.
+ * @note Back-facing triangles and triangles with projected determinant below 1 are skipped.
+ * @note Camera eye=(-1,0,2), center=(0,0,0), up=(0,1,0); focal distance is |eye-center|.
+ * @note Viewport mapping preserves z; the double depth buffer stores unscaled z/w.
  * @note Larger depth wins even without depth image output; visualization alone is clamped.
  * @note No lighting or textures are applied.
  */
