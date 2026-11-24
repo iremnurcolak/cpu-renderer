@@ -20,7 +20,7 @@ static const Vec3 cameraCenter = {0.0, 0.0, 0.0};
 static const Vec3 cameraUp = {0.0, 1.0, 0.0};
 
 typedef struct Vertex { float x, y, z; } Vertex;
-typedef void (*FaceDrawer)(const Vec4 *, size_t, Mat4, TGAImage *, double *);
+typedef void (*FaceDrawer)(const Vec3 *, size_t, Mat4, const Shader *, TGAImage *, double *);
 
 /**
  * @brief Grow an owned array geometrically, retaining its storage on failure.
@@ -133,22 +133,23 @@ static char *resolveModelPath(const char *filename)
 
 /**
  * @brief Draw a closed polygon boundary in white.
- * @param[in] points Ordered face vertices in clip coordinates.
+ * @param[in] points Ordered face vertices in object coordinates.
  * @param[in] count Number of points, at least three.
  * @param[in] viewport Screen mapping matrix.
+ * @param[in] shader Vertex and fragment callbacks backed by RandomShader data.
  * @param[in,out] framebuffer Destination image.
  * @param[in,out] zbuffer Unused in wireframe mode; may be NULL.
  */
-static void drawWireframeFace(const Vec4 *points, size_t count, Mat4 viewport,
-    TGAImage *framebuffer, double *zbuffer)
+static void drawWireframeFace(const Vec3 *points, size_t count, Mat4 viewport,
+    const Shader *shader, TGAImage *framebuffer, double *zbuffer)
 {
     (void)zbuffer;
     Vec3 previous;
-    if(!cameraClipToScreen(points[count - 1], viewport, &previous)) return;
+    if(!cameraClipToScreen(shader->vertex(shader->context, points[count - 1], 0), viewport, &previous)) return;
     for(size_t i = 0; i < count; ++i)
     {
         Vec3 current;
-        if(!cameraClipToScreen(points[i], viewport, &current)) return;
+        if(!cameraClipToScreen(shader->vertex(shader->context, points[i], 0), viewport, &current)) return;
         drawLineInterpolated((int)previous.x, (int)previous.y,
             (int)current.x, (int)current.y, framebuffer, white);
         previous = current;
@@ -157,41 +158,41 @@ static void drawWireframeFace(const Vec4 *points, size_t count, Mat4 viewport,
 
 /**
  * @brief Triangulate a convex face as a fan with a random RGB color per triangle.
- * @param[in] points Ordered face vertices in clip coordinates.
+ * @param[in] points Ordered face vertices in object coordinates.
  * @param[in] count Number of points, at least three.
  * @param[in] viewport Screen mapping matrix.
+ * @param[in] shader Vertex and fragment callbacks backed by RandomShader data.
  * @param[in,out] framebuffer Destination RGB image.
  * @param[in,out] zbuffer Optional row-major double depth buffer, or NULL.
- * @note Pixels failing the depth comparison are skipped before color interpolation.
+ * @note Pixels failing the depth comparison are skipped before fragment shading.
  */
-static void drawFilledFace(const Vec4 *points, size_t count, Mat4 viewport,
-    TGAImage *framebuffer, double *zbuffer)
+static void drawFilledFace(const Vec3 *points, size_t count, Mat4 viewport,
+    const Shader *shader, TGAImage *framebuffer, double *zbuffer)
 {
     for(size_t i = 1; i + 1 < count; ++i)
     {
-        const TGAColor color = {{(uint8_t)(rand() % 256), (uint8_t)(rand() % 256),
-            (uint8_t)(rand() % 256), 255}};
-        const Vec4 clip[3] = {points[0], points[i], points[i + 1]};
-        rasterizeTriangle(clip, viewport, color, color, color, framebuffer, zbuffer);
+        randomShaderBeginTriangle(shader->context);
+        const Vec4 clip[3] = {
+            shader->vertex(shader->context, points[0], 0),
+            shader->vertex(shader->context, points[i], 1),
+            shader->vertex(shader->context, points[i + 1], 2)
+        };
+        rasterizeTriangle(clip, viewport, shader, framebuffer, zbuffer);
     }
 }
 
 /**
- * @brief Resolve face indices and transform vertices into clip coordinates.
+ * @brief Resolve OBJ face indices into object-space positions without camera transformations.
  * @param[in] text Face tokens following the f record tag.
  * @param[in] vertices Vertices already read from the OBJ stream.
  * @param[in] vertexCount Number of available vertices.
- * @param[in] viewProjection Composed perspective * modelView matrix.
- * @param[in] viewport Screen mapping used to validate wireframe integer conversions.
- * @param[in,out] points Owned clip-coordinate buffer, initially NULL.
+ * @param[in,out] points Owned object-position buffer, initially NULL.
  * @param[in,out] capacity Point buffer capacity.
- * @param[out] count Number of clip vertices; zero for an invalid face.
+ * @param[out] count Number of resolved positions; zero for an invalid face.
  * @return false only for allocation failure; invalid faces are skipped.
- * @note Perspective faces on or behind the camera are skipped; near-plane clipping is not implemented.
  */
 static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCount,
-    Mat4 viewProjection, Mat4 viewport,
-    Vec4 **points, size_t *capacity, size_t *count)
+    Vec3 **points, size_t *capacity, size_t *count)
 {
     *count = 0;
     while(*text)
@@ -221,17 +222,12 @@ static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCou
             resolved = vertexCount - (size_t)distance;
         }
         const Vertex source = vertices[resolved];
-        const Vec4 clip = mat4MultiplyVec4(viewProjection,
-            (Vec4){source.x, source.y, source.z, 1.0});
-        Vec3 screen;
-        if(!cameraClipToScreen(clip, viewport, &screen)
-            || screen.x < INT_MIN || screen.x >= INT_MAX
-            || screen.y < INT_MIN || screen.y >= INT_MAX) goto invalid;
-        Vec4 *grown = growArray(*points, capacity, *count + 1, sizeof(**points));
+        if(!isfinite(source.x) || !isfinite(source.y) || !isfinite(source.z)) goto invalid;
+        Vec3 *grown = growArray(*points, capacity, *count + 1, sizeof(**points));
         if(!grown)
             return false;
         *points = grown;
-        (*points)[(*count)++] = clip;
+        (*points)[(*count)++] = (Vec3){source.x, source.y, source.z};
         text = end;
         while(*text && !isspace((unsigned char)*text))
             ++text;
@@ -239,6 +235,29 @@ static bool parseFace(const char *text, const Vertex *vertices, size_t vertexCou
     return true;
 invalid:
     *count = 0;
+    return true;
+}
+
+/**
+ * @brief Validate a whole face through the vertex stage before any drawing occurs.
+ * @param[in] points Object-space face positions.
+ * @param[in] count Number of resolved positions.
+ * @param[in] shader Vertex callback and its caller-owned data.
+ * @param[in] viewport Screen mapping used for integer wireframe bounds.
+ * @return false for invalid clip coordinates or unrepresentable screen positions.
+ * @note Slot zero is scratch storage here; primitive assembly overwrites all three
+ *       triangle attributes before rasterization. Near-plane clipping is not performed.
+ */
+static bool validateFace(const Vec3 *points, size_t count, const Shader *shader, Mat4 viewport)
+{
+    for(size_t i = 0; i < count; ++i)
+    {
+        const Vec4 clip = shader->vertex(shader->context, points[i], 0);
+        Vec3 screen;
+        if(!cameraClipToScreen(clip, viewport, &screen)
+            || screen.x < INT_MIN || screen.x >= INT_MAX
+            || screen.y < INT_MIN || screen.y >= INT_MAX) return false;
+    }
     return true;
 }
 
@@ -271,7 +290,7 @@ static int renderObj(const char *objPath, const char *outputPath,
     TGAImage depthImage = {0};
     double *zbuffer = NULL;
     Vertex *vertices = NULL;
-    Vec4 *points = NULL;
+    Vec3 *points = NULL;
     char *line = NULL;
     size_t vertexCount = 0, vertexCapacity = 0, pointCapacity = 0, lineCapacity = 0, faceCount = 0;
     const bool depthEnabled = zbufferPath && *zbufferPath;
@@ -281,7 +300,8 @@ static int renderObj(const char *objPath, const char *outputPath,
     const double focalDistance = vec3Length(vec3Subtract(cameraEye, cameraCenter));
     const Mat4 perspective = projection == OBJ_PROJECTION_PERSPECTIVE
         ? cameraPerspective(focalDistance) : mat4Identity();
-    const Mat4 viewProjection = mat4Multiply(perspective, modelView);
+    RandomShader shaderData;
+    const Shader shader = randomShaderInit(&shaderData, modelView, perspective);
     const Mat4 viewport = cameraViewport(framebufferWidth / 16, framebufferHeight / 16,
         framebufferWidth * 7 / 8, framebufferHeight * 7 / 8);
     if(!tgaImageInit(&framebuffer, framebufferWidth, framebufferHeight, TGA_RGB)
@@ -312,13 +332,12 @@ static int renderObj(const char *objPath, const char *outputPath,
         else if(line[0] == 'f' && isspace((unsigned char)line[1]))
         {
             size_t count;
-            if(!parseFace(line + 1, vertices, vertexCount, viewProjection, viewport,
-                &points, &pointCapacity, &count))
+            if(!parseFace(line + 1, vertices, vertexCount, &points, &pointCapacity, &count))
                 goto cleanup;
-            if(count >= 3)
+            if(count >= 3 && validateFace(points, count, &shader, viewport))
             {
                 ++faceCount;
-                drawFace(points, count, viewport, &framebuffer, zbuffer);
+                drawFace(points, count, viewport, &shader, &framebuffer, zbuffer);
             }
         }
     }

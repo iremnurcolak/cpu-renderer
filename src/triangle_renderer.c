@@ -24,12 +24,6 @@ static int minInt(int a, int b) { return a < b ? a : b; }
 /** @brief Return the larger of two integer bounds. */
 static int maxInt(int a, int b) { return a > b ? a : b; }
 
-/** @brief Limit a floating-point channel or depth value to an inclusive range. */
-static double clampDouble(double value, double lower, double upper)
-{
-    return value < lower ? lower : value > upper ? upper : value;
-}
-
 /**
  * @brief Find the axis-aligned bounding box of three vertices.
  * @note Corner names assume the y axis increases upward.
@@ -235,34 +229,20 @@ void drawTriangleWithBoundingBox(int ax, int ay, int bx, int by, int cx, int cy,
 }
 
 /**
- * @brief Fill a colored triangle using a double-precision depth buffer.
- * @note Triangles with signed area below 0.5 pixel squared are skipped.
- * @note With y increasing upward, only counterclockwise triangles are drawn.
- * @note Triangle edges are included. B, G, and R channels are interpolated separately.
- * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
- * @param[in] ax X coordinate of vertex a.
- * @param[in] ay Y coordinate of vertex a.
- * @param[in] bx X coordinate of vertex b.
- * @param[in] by Y coordinate of vertex b.
- * @param[in] cx X coordinate of vertex c.
- * @param[in] cy Y coordinate of vertex c.
- * @param[in] az Unclamped depth at vertex A.
- * @param[in] bz Unclamped depth at vertex B.
- * @param[in] cz Unclamped depth at vertex C.
- * @param[in,out] framebuffer Image receiving the rendered pixels.
- * @param[in,out] zbuffer Row-major double array matching the framebuffer, or NULL to disable depth.
- * @note Initialize every depth sample to -INFINITY; the largest value is retained.
- * @note Depth testing precedes color interpolation and pixel writes; larger z is nearer.
- * @param[in] colorA Color at vertex A in BGRA order.
- * @param[in] colorB Color at vertex B in BGRA order.
- * @param[in] colorC Color at vertex C in BGRA order.
+ * @brief Rasterize screen-space vertices and invoke a shader for accepted fragments.
+ * @param[in] screen Three subpixel screen positions with unscaled depth.
+ * @param[in] shader Fragment callback and caller-owned, read-only context.
+ * @param[in,out] framebuffer Destination image.
+ * @param[in,out] zbuffer Optional double depth array, initialized to -INFINITY.
+ * @note Coverage and depth tests precede shading; discarded fragments do not write depth.
  */
-void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by, double cx, double cy,
-    double az, double bz, double cz,
-    TGAColor  colorA, TGAColor  colorB, TGAColor  colorC,
-    TGAImage * framebuffer, double * zbuffer)
+static void rasterizeScreenTriangle(const Vec3 screen[3], const Shader *shader,
+    TGAImage *framebuffer, double *zbuffer)
 {
-    if(!framebuffer || !framebuffer->data || !isfinite(ax) || !isfinite(ay)
+    const double ax = screen[0].x, ay = screen[0].y, az = screen[0].z;
+    const double bx = screen[1].x, by = screen[1].y, bz = screen[1].z;
+    const double cx = screen[2].x, cy = screen[2].y, cz = screen[2].z;
+    if(!shader || !shader->fragment || !framebuffer || !framebuffer->data || !isfinite(ax) || !isfinite(ay)
         || !isfinite(bx) || !isfinite(by) || !isfinite(cx) || !isfinite(cy)
         || !isfinite(az) || !isfinite(bz) || !isfinite(cz)) return;
     double minX, minY, maxX, maxY;
@@ -300,54 +280,73 @@ void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by
             if(alpha < 0 || beta < 0 || gamma < 0)
             {
                 continue;
-                //the vertex is not inside the triangle
             }
 
-            if(zbuffer)
-            {
-                const double z = alpha * az + beta * bz + gamma * cz;
-                const size_t index = (size_t)y * framebuffer->width + x;
-                if(z <= zbuffer[index]) continue;
-                zbuffer[index] = z;
-            }
+            const double z = alpha * az + beta * bz + gamma * cz;
+            const size_t index = (size_t)y * framebuffer->width + x;
+            if(zbuffer && z <= zbuffer[index]) continue;
 
-            TGAColor color = {{0}};
-            for(int channel = 0; channel < 3; ++channel)
-            {
-                const double value = alpha * colorA.bgra[channel]
-                    + beta * colorB.bgra[channel]
-                    + gamma * colorC.bgra[channel];
-                color.bgra[channel] = (uint8_t)clampDouble(value, 0.0, 255.0);
-            }
-            color.bgra[3] = 255;
+            const FragmentResult result = shader->fragment(shader->context,
+                (Vec3){alpha, beta, gamma});
+            if(result.discard) continue;
 
-            tgaImageSet(framebuffer, x, y, color);
+            if(zbuffer) zbuffer[index] = z;
+            tgaImageSet(framebuffer, x, y, result.color);
         }
     }
+}
+
+/**
+ * @brief Fill a colored triangle using a double-precision depth buffer.
+ * @note Triangles with signed area below 0.5 pixel squared are skipped.
+ * @note With y increasing upward, only counterclockwise triangles are drawn.
+ * @note Triangle edges are included. B, G, and R channels are interpolated separately.
+ * @note Output alpha is 255; supply an RGB or RGBA framebuffer for full color.
+ * @param[in] ax X coordinate of vertex a.
+ * @param[in] ay Y coordinate of vertex a.
+ * @param[in] bx X coordinate of vertex b.
+ * @param[in] by Y coordinate of vertex b.
+ * @param[in] cx X coordinate of vertex c.
+ * @param[in] cy Y coordinate of vertex c.
+ * @param[in] az Unclamped depth at vertex A.
+ * @param[in] bz Unclamped depth at vertex B.
+ * @param[in] cz Unclamped depth at vertex C.
+ * @param[in,out] framebuffer Image receiving the rendered pixels.
+ * @param[in,out] zbuffer Row-major double array matching the framebuffer, or NULL to disable depth.
+ * @note Initialize every depth sample to -INFINITY; the largest value is retained.
+ * @note Depth testing precedes color interpolation and pixel writes; larger z is nearer.
+ * @param[in] colorA Color at vertex A in BGRA order.
+ * @param[in] colorB Color at vertex B in BGRA order.
+ * @param[in] colorC Color at vertex C in BGRA order.
+ */
+void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by, double cx, double cy,
+    double az, double bz, double cz,
+    TGAColor colorA, TGAColor colorB, TGAColor colorC,
+    TGAImage *framebuffer, double *zbuffer)
+{
+    InterpolatedColorShader data;
+    const Shader shader = interpolatedColorShaderInit(&data, colorA, colorB, colorC);
+    const Vec3 screen[3] = {{ax, ay, az}, {bx, by, bz}, {cx, cy, cz}};
+    rasterizeScreenTriangle(screen, &shader, framebuffer, zbuffer);
 }
 
 /**
  * @brief Rasterize a clip-space triangle after homogeneous division and viewport mapping.
  * @param[in] clip Three vertices transformed by perspective * modelView.
  * @param[in] viewport Screen mapping matrix preserving depth.
- * @param[in] colorA Color at the first vertex.
- * @param[in] colorB Color at the second vertex.
- * @param[in] colorC Color at the third vertex.
+ * @param[in] shader Fragment shader; all three vertex-stage calls must already be complete.
  * @param[in,out] framebuffer Destination RGB or RGBA image.
  * @param[in,out] zbuffer Row-major double depth array, initialized to -INFINITY, or NULL.
  * @note Faces with nonfinite vertices or nonpositive w are skipped without near-plane clipping.
+ * @note Depth is written only after the fragment shader accepts the sample.
  */
-void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport,
-    TGAColor colorA, TGAColor colorB, TGAColor colorC,
+void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport, const Shader *shader,
     TGAImage *framebuffer, double *zbuffer)
 {
     Vec3 screen[3];
     for(int i = 0; i < 3; ++i)
         if(!cameraClipToScreen(clip[i], viewport, &screen[i])) return;
-    drawTriangleWithBoundingBoxDepth(screen[0].x, screen[0].y,
-        screen[1].x, screen[1].y, screen[2].x, screen[2].y,
-        screen[0].z, screen[1].z, screen[2].z,
-        colorA, colorB, colorC, framebuffer, zbuffer);
+    rasterizeScreenTriangle(screen, shader, framebuffer, zbuffer);
 }
 
 /**

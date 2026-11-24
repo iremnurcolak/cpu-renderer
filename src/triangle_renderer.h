@@ -2,7 +2,7 @@
 #define TRIANGLE_RENDERER_H
 
 #include "tgaimage.h"
-#include "mat.h"
+#include "shader.h"
 
 /**
  * @brief Fill a triangle using floating-point scanline intersections.
@@ -104,15 +104,13 @@ void drawTriangleWithBoundingBoxDepth(double ax, double ay, double bx, double by
  * @brief Rasterize a clip-space triangle after homogeneous division and viewport mapping.
  * @param[in] clip Three vertices transformed by perspective * modelView.
  * @param[in] viewport Screen mapping matrix preserving depth.
- * @param[in] colorA Color at the first vertex.
- * @param[in] colorB Color at the second vertex.
- * @param[in] colorC Color at the third vertex.
+ * @param[in] shader Fragment shader; all three vertex-stage calls must already be complete.
  * @param[in,out] framebuffer Destination RGB or RGBA image.
  * @param[in,out] zbuffer Row-major double depth array, initialized to -INFINITY, or NULL.
  * @note Faces with nonfinite vertices or nonpositive w are skipped without near-plane clipping.
+ * @note Depth is written only after the fragment shader accepts the sample.
  */
-void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport,
-    TGAColor colorA, TGAColor colorB, TGAColor colorC,
+void rasterizeTriangle(const Vec4 clip[3], Mat4 viewport, const Shader *shader,
     TGAImage *framebuffer, double *zbuffer);
 
 #endif

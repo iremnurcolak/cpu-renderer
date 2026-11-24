@@ -308,21 +308,125 @@ static void testClipRasterization(void)
     double depth[12 * 12];
     for(size_t i = 0; i < 12 * 12; ++i) depth[i] = -INFINITY;
     const Mat4 viewport = mat4Identity();
+    InterpolatedColorShader data;
+    Shader shader = interpolatedColorShaderInit(&data, red, red, red);
     Vec4 clip[3] = {{1.25, 1.25, -2, 1}, {9.25, 1.25, -2, 1}, {1.25, 9.25, -2, 1}};
-    rasterizeTriangle(clip, viewport, red, red, red, &image, depth);
+    rasterizeTriangle(clip, viewport, &shader, &image, depth);
     CHECK(sameColor(tgaImageGet(&image, 1, 1), (TGAColor){{0}}, 3));
     CHECK(sameColor(tgaImageGet(&image, 2, 2), red, 3));
     CHECK(depth[2 * 12 + 2] == -2.0);
     /* Scaling all four components must leave the represented point unchanged. */
     for(int i = 0; i < 3; ++i) clip[i] = vec4Scale(clip[i], 2.0);
     for(int i = 0; i < 3; ++i) clip[i].z = -2.0;
-    rasterizeTriangle(clip, viewport, green, green, green, &image, depth);
+    shader = interpolatedColorShaderInit(&data, green, green, green);
+    rasterizeTriangle(clip, viewport, &shader, &image, depth);
     CHECK(depth[2 * 12 + 2] == -1.0);
     CHECK(sameColor(tgaImageGet(&image, 2, 2), green, 3));
     clip[0].w = 0.0;
-    rasterizeTriangle(clip, viewport, red, red, red, &image, depth);
+    shader = interpolatedColorShaderInit(&data, red, red, red);
+    rasterizeTriangle(clip, viewport, &shader, &image, depth);
     CHECK(sameColor(tgaImageGet(&image, 2, 2), green, 3));
     tgaImageDestroy(&image);
+}
+
+/** @brief Data for a fragment shader that discards selected barycentric regions. */
+typedef struct
+{
+    TGAColor color;
+    bool discardAll;
+} DiscardShader;
+
+/**
+ * @brief Discard fragments near corner A, or all fragments when requested.
+ * @param[in] context Read-only DiscardShader data.
+ * @param[in] barycentric Screen-space interpolation weights.
+ * @return A configurable color and a discard decision based on the A weight.
+ */
+static FragmentResult discardFragment(const void *context, Vec3 barycentric)
+{
+    const DiscardShader *data = context;
+    CHECK(fabs(barycentric.x + barycentric.y + barycentric.z - 1.0) < 1e-12);
+    return (FragmentResult){data->discardAll || barycentric.x > 0.5, data->color};
+}
+
+/**
+ * @brief Fail if an occluded fragment reaches the programmable fragment stage.
+ * @param[in] context Unused shader data.
+ * @param[in] barycentric Unused interpolation weights.
+ * @return An unreachable discarded fragment after reporting the test failure.
+ */
+static FragmentResult unexpectedFragment(const void *context, Vec3 barycentric)
+{
+    (void)context;
+    (void)barycentric;
+    CHECK(false);
+    return (FragmentResult){true, {{0}}};
+}
+
+/** @brief Check that shader discards preserve depth and permit farther surfaces to appear. */
+static void testFragmentDiscard(void)
+{
+    TGAImage image = {0};
+    CHECK(tgaImageInit(&image, 12, 12, TGA_RGBA));
+    double depth[12 * 12];
+    for(size_t i = 0; i < 12 * 12; ++i) depth[i] = -INFINITY;
+    DiscardShader data = {{{0, 255, 0, 77}}, false};
+    const Shader shader = {&data, NULL, discardFragment};
+    Vec4 clip[3] = {{1, 1, 2, 1}, {9, 1, 2, 1}, {1, 9, 2, 1}};
+    rasterizeTriangle(clip, mat4Identity(), &shader, &image, depth);
+    CHECK(depth[2 * 12 + 2] == -INFINITY);
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), (TGAColor){{0}}, 4));
+    CHECK(depth[4 * 12 + 4] == 2.0);
+    CHECK(sameColor(tgaImageGet(&image, 4, 4), data.color, 4));
+
+    /* A farther surface must be visible through fragments the first shader discarded. */
+    InterpolatedColorShader farData;
+    const Shader farShader = interpolatedColorShaderInit(&farData, red, red, red);
+    for(int i = 0; i < 3; ++i) clip[i].z = 1.0;
+    rasterizeTriangle(clip, mat4Identity(), &farShader, &image, depth);
+    CHECK(depth[2 * 12 + 2] == 1.0);
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), red, 4));
+    CHECK(depth[4 * 12 + 4] == 2.0);
+    CHECK(sameColor(tgaImageGet(&image, 4, 4), data.color, 4));
+
+    /* Every sample is now covered by a closer surface, so no shader call is needed. */
+    const Shader hiddenShader = {NULL, NULL, unexpectedFragment};
+    for(int i = 0; i < 3; ++i) clip[i].z = 0.0;
+    rasterizeTriangle(clip, mat4Identity(), &hiddenShader, &image, depth);
+
+    /* A discarded closer surface must not disturb either existing image or depth. */
+    data.discardAll = true;
+    for(int i = 0; i < 3; ++i) clip[i].z = 3.0;
+    rasterizeTriangle(clip, mat4Identity(), &shader, &image, depth);
+    CHECK(depth[2 * 12 + 2] == 1.0 && depth[4 * 12 + 4] == 2.0);
+    CHECK(sameColor(tgaImageGet(&image, 2, 2), red, 4));
+    CHECK(sameColor(tgaImageGet(&image, 4, 4), data.color, 4));
+    tgaImageDestroy(&image);
+}
+
+/** @brief Verify vertex-stage camera attributes and constant random-color fragment output. */
+static void testRandomShader(void)
+{
+    Mat4 modelView;
+    CHECK(cameraLookAt(&modelView, (Vec3){-1, 0, 2}, (Vec3){0, 0, 0}, (Vec3){0, 1, 0}));
+    const Mat4 perspective = cameraPerspective(sqrt(5.0));
+    RandomShader data;
+    const Shader shader = randomShaderInit(&data, modelView, perspective);
+    const Vec4 vertex = {0.2, -0.4, 0.7, 1.0};
+    const Vec4 clip = shader.vertex(shader.context, (Vec3){vertex.x, vertex.y, vertex.z}, 2);
+    const Vec4 eye = mat4MultiplyVec4(modelView, vertex);
+    const Vec4 expected = mat4MultiplyVec4(mat4Multiply(perspective, modelView), vertex);
+    CHECK(data.triangle[2].x == eye.x && data.triangle[2].y == eye.y && data.triangle[2].z == eye.z);
+    CHECK(clip.x == expected.x && clip.y == expected.y && clip.z == expected.z && clip.w == expected.w);
+    srand(42);
+    randomShaderBeginTriangle(&data);
+    const FragmentResult a = shader.fragment(shader.context, (Vec3){1, 0, 0});
+    const FragmentResult b = shader.fragment(shader.context, (Vec3){0.2, 0.3, 0.5});
+    CHECK(!a.discard && !b.discard && a.color.bgra[3] == 255);
+    CHECK(sameColor(a.color, b.color, 4));
+    srand(42);
+    randomShaderBeginTriangle(&data);
+    CHECK(sameColor(data.color, a.color, 4));
 }
 
 /** @brief Run C API regression tests and report success. */
@@ -337,6 +441,8 @@ int main(void)
     testViewportProjection();
     testCamera();
     testClipRasterization();
+    testFragmentDiscard();
+    testRandomShader();
     puts("Renderer C17 tests passed.");
     return 0;
 }

@@ -96,8 +96,9 @@ Initialize `zbuffer` with `TGA_GRAYSCALE` to store only the first channel.
   vertex colors; output alpha is 255.
 - `drawTriangleWithBoundingBoxDepth` accepts subpixel screen coordinates, three
   unscaled depth values, and an optional row-major `double` depth buffer pointer.
-- `rasterizeTriangle` accepts clip-space vertices and a viewport matrix, then
-  performs homogeneous division before calling the bounding-box rasterizer.
+- `rasterizeTriangle` accepts clip-space vertices, a viewport matrix, and a
+  `Shader` interface. It performs homogeneous division and calls the fragment
+  shader for samples that pass coverage and depth tests.
 
 The bounding-box paths skip triangles with signed area below 0.5 pixel squared,
 including clockwise and degenerate triangles when y increases upward. Assign the
@@ -111,6 +112,62 @@ drawTriangleWithBoundingBoxDepth(ax, ay, bx, by, cx, cy,
 ```
 
 All project functions have English Doxygen comments in the headers and sources.
+
+### Programmable shader stages
+
+Following the [Shading lecture's refactoring](https://haqr.eu/tinyrenderer/shading/#refactoring),
+`shader.h` defines a C shader interface:
+
+- `Shader.context` points to caller-owned shader data. Keep this data alive until
+  drawing finishes; copying a `Shader` does not copy the data it points to.
+- `Shader.vertex(context, position, vertexIndex)` transforms a model-space
+  position into clip coordinates. The corner index is 0, 1, or 2 and selects
+  where to store attributes for the current triangle.
+- `Shader.fragment(context, barycentric)` receives screen-space weights and
+  returns a `FragmentResult` containing a color and a `discard` flag.
+
+`shader.c` provides two implementations. `RandomShader` stores the camera
+matrices, the current triangle's camera-space positions, and one random color.
+Its fragment callback returns that color directly. The stored positions will
+allow a lighting shader to compute a face normal in camera coordinates.
+`InterpolatedColorShader` blends three vertex colors and preserves the existing
+triangle examples. It has no vertex callback because those examples already
+provide screen-space positions.
+
+The rasterizer owns triangle coverage, barycentric coordinates, and depth
+testing. Its per-fragment sequence is:
+
+1. Reject samples outside the triangle or hidden by the depth buffer.
+2. Call the fragment shader with the barycentric coordinates.
+3. Skip discarded fragments without changing color or depth.
+4. Write the accepted fragment's depth and color.
+
+The fragment callback reads shader data without modifying it, allowing the
+existing OpenMP pixel loop to run safely. Complete all vertex calls before
+starting rasterization, and do not change the shader data while it is running.
+Alpha is selected by the fragment shader; both built-in shaders output 255.
+
+For example, after configuring `modelView`, `perspective`, and `viewport`:
+
+```c
+#include "shader.h"
+#include "triangle_renderer.h"
+
+RandomShader data;
+Shader shader = randomShaderInit(&data, modelView, perspective);
+randomShaderBeginTriangle(&data);
+Vec4 clip[3];
+for (int i = 0; i < 3; ++i) {
+    clip[i] = shader.vertex(shader.context, positions[i], i);
+}
+rasterizeTriangle(clip, viewport, &shader, &framebuffer, zbuffer);
+```
+
+`positions` contains three object-space `Vec3` values. For an orthographic
+render, pass `mat4Identity()` as the perspective matrix. The application seeds
+`rand()`; `randomShaderBeginTriangle` chooses the next triangle's color.
+Returning a constant color avoids the one-level rounding differences that could
+previously arise when interpolating three identical colors.
 
 ## Rendering OBJ models
 
@@ -188,12 +245,17 @@ when a folder has a different name, such as `obj/boggie/head.obj`.
 Relative paths are resolved from the terminal's working directory.
 
 The shared OBJ reader handles vertex positions (`v`), slash-separated and
-negative face indices, and polygonal faces. Both drawing modes use the same
+negative face indices, and polygonal faces. `parseFace` resolves object-space
+positions without applying camera transforms. The renderer validates the face
+through the vertex stage before drawing, preserving whole-face rejection for
+invalid projected positions. Filled rendering assembles each triangle with
+three vertex-shader calls, while wireframe uses the vertex stage and draws
+white lines without invoking the fragment shader. Both modes use the same
 matrix camera pipeline, based on the
 [Better camera lesson](https://haqr.eu/tinyrenderer/camera/):
 
 1. Embed each position as a homogeneous `Vec4` with `w = 1`.
-2. Multiply by the precomputed `Perspective * ModelView` matrix to get clip coordinates.
+2. The vertex shader multiplies by `Perspective * ModelView` to get clip coordinates.
 3. Divide x, y, and z by w to get normalized device coordinates.
 4. Apply `Viewport` to x/y while preserving z for depth testing.
 
@@ -216,8 +278,8 @@ The viewport leaves a 1/16 margin on each side of the 800 × 800 framebuffer.
 vertices, performs division and viewport mapping, and keeps screen coordinates
 as doubles until sampling pixels. The projected determinant must be at least 1
 for a triangle to be drawn. Wireframe mode draws white face boundaries.
-Filled mode splits convex faces into triangle fans and assigns a random color
-to each triangle. Lighting and textures are not applied.
+Filled mode splits convex faces into triangle fans and prepares `RandomShader`
+for each triangle. Lighting and textures are not applied.
 
 The public C functions replace the `ObjRenderer` class:
 
