@@ -16,13 +16,5 @@ The latest measurements were taken on Windows in a Release configuration using
 the Visual Studio 17 2022 CMake generator. Results may vary with system load and
 hardware, so comparisons use the median value.
 
-The current C17 benchmark uses `rand()` and CPU time, and renders at 128 × 128.
-Its timings and random sequence differ from these historical results.
-
-## Running the current C benchmark
-
-```powershell
-cmake -S . -B build
-cmake --build build --config Release
-.\build\Release\cpu_renderer.exe --benchmark
-```
+The command-line benchmark mode has been removed. These measurements are
+retained as a historical record of the line-rendering experiments.

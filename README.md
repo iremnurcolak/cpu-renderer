@@ -188,7 +188,7 @@ Filled rendering with perspective is the default. Use one flag from each group:
 - `--perspective`: Apply the camera frame, perspective division, and viewport mapping.
 
 Conflicting flags within either group are rejected. Projection and drawing-mode
-flags require a model and cannot be combined with `--benchmark`. `--help` lists
+flags require a model. `--help` lists
 all options and exits without producing images. These are executable arguments,
 so no rebuild is needed when switching projection modes.
 
@@ -374,28 +374,10 @@ shared OBJ parsing, and output failures. Fixtures are generated under
 `build/test-output/`. Set `-DBUILD_TESTING=OFF` to build only the renderer.
 With a multi-configuration generator, use `ctest --test-dir build -C Debug`.
 
-## Random-line performance benchmark
-
-```bash
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release
-./build-release/cpu_renderer --benchmark
-```
-
-The benchmark draws 16 million random lines in the 128 × 128 RGB framebuffer.
-The C version uses `srand(42)` and `rand()` for coordinates and BGRA channels;
-color channels range from 0 through 254. The sequence is repeatable with the
-same C runtime but differs from the previous C++ `std::mt19937` sequence.
-Timing uses C `clock()` and reports **CPU seconds**, including random generation
-and line drawing but excluding the TGA write.
-
-[BENCHMARKS.md](BENCHMARKS.md) preserves historical C++ measurements from
-2026-10-06 on a 64 × 64 framebuffer. Those wall-time measurements and random
-sequences are not directly comparable to the current C benchmark.
-
 ## Files
 
-- `src/main.c`: Example scene, benchmark, and OBJ command-line entry point.
+- `src/main.c`: CLI parsing into typed options, model/example rendering helpers,
+  and entry-point dispatch.
 - `src/colors.c` / `colors.h`: Shared BGRA color constants.
 - `src/line_renderer.c` / `line_renderer.h`: Line drawing.
 - `src/triangle_renderer.c` / `triangle_renderer.h`: Scanlines, color interpolation,
@@ -405,6 +387,7 @@ sequences are not directly comparable to the current C benchmark.
 - `tests/renderer_tests.c`: C API regression tests.
 - `obj/`: Models and their associated textures.
 - `CMakeLists.txt`: C17 build and test configuration.
+- [BENCHMARKS.md](BENCHMARKS.md): Archived line-rendering performance measurements.
 
 ## Progress
 
